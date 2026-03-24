@@ -1,0 +1,60 @@
+// Este archivo vive en /prisma/schema.prisma
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Usuario {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  password_hash String
+  rol           Rol      @default(CLIENTE)
+  cliente       Cliente?
+}
+
+enum Rol {
+  ADMIN
+  CLIENTE
+  TECNICO
+}
+
+model Cliente {
+  id          Int       @id @default(autoincrement())
+  nombre      String
+  telefono    String?
+  usuario     Usuario   @relation(fields: [usuarioId], references: [id])
+  usuarioId   String    @unique
+  servicios   Servicio[]
+}
+
+model Servicio {
+  id              Int       @id @default(autoincrement())
+  clienteId       Int
+  cliente         Cliente   @relation(fields: [clienteId], references: [id])
+  planNombre      String    // Ej: "20 Megas Hogar"
+  precio          Decimal   @db.Decimal(10, 2)
+  estado          Estado    @default(ACTIVO)
+  diaCorte        Int
+  facturas        Factura[]
+}
+
+enum Estado {
+  ACTIVO
+  SUSPENDIDO
+  CANCELADO
+}
+
+model Factura {
+  id          Int      @id @default(autoincrement())
+  servicioId  Int
+  servicio    Servicio @relation(fields: [servicioId], references: [id])
+  monto       Decimal  @db.Decimal(10, 2)
+  vencimiento DateTime
+  pagada      Boolean  @default(false)
+  openpayId   String?  // Para rastrear en la API de Openpay
+}
