@@ -1,7 +1,10 @@
 // src/pages/Dashboard.jsx
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 
 const Dashboard = () => {
+  const navigate = useNavigate();
+
   // Datos simulados (Hardcoded) para la Fase 1.
   // En la Fase 2, estos datos llegarán desde tu backend (Node.js/Prisma).
   const clienteData = {
@@ -23,7 +26,9 @@ const Dashboard = () => {
           <span className="text-2xl">📡</span>
           <span className="font-bold text-lg tracking-wide">Citynet</span>
         </div>
-        <button className="text-sm font-medium bg-blue-700/50 hover:bg-blue-800 px-3 py-1.5 rounded-md transition-colors">
+        <button 
+            onClick={() => navigate('/login')}
+            className="text-sm font-medium bg-blue-700/50 hover:bg-blue-800 px-3 py-1.5 rounded-md transition-colors">
           Cerrar Sesión
         </button>
       </nav>
@@ -79,7 +84,9 @@ const Dashboard = () => {
                 ¡Gracias! Tu recibo está pagado.
               </div>
             ) : (
-              <button className="w-full bg-primary hover:bg-blue-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-blue-200/50 transition-all active:scale-[0.98] text-lg flex items-center justify-center gap-2">
+              <button 
+                onClick={() => navigate('/pagar')}
+                className="w-full bg-primary hover:bg-blue-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-blue-200/50 transition-all active:scale-[0.98] text-lg flex items-center justify-center gap-2">
                 <span>💳</span> PAGAR AHORA
               </button>
             )}
