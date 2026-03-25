@@ -1,6 +1,7 @@
 // src/pages/Login.jsx
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import logoCitynet from '../assets/logo-citynet-antiguo.png';
 
 const Login = () => {
   const [formData, setFormData] = useState({ identifier: '', password: '' });
@@ -19,8 +20,12 @@ const Login = () => {
         
         {/* Logo / Header */}
         <div className="text-center mb-10">
-          <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
-            <span className="text-3xl">📡</span> 
+          <div className="w-60 h-60 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
+            <img 
+                src={logoCitynet} 
+                alt="Logo Citynet" 
+                className="w-full h-full object-contain p-0"
+            />
           </div>
           <h1 className="text-2xl font-bold text-slate-800">Portal de Clientes</h1>
           <p className="text-slate-500 mt-2">Ingresa para gestionar tu internet</p>
