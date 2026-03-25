@@ -1,6 +1,7 @@
 // src/pages/Dashboard.jsx
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
+import logoCitynet from '../assets/logo-citynet-antiguo.png';
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -23,8 +24,7 @@ const Dashboard = () => {
       {/* Navbar Superior */}
       <nav className="bg-primary text-white p-4 shadow-md flex justify-between items-center">
         <div className="flex items-center gap-2">
-          <span className="text-2xl">📡</span>
-          <span className="font-bold text-lg tracking-wide">Citynet</span>
+            <img src={logoCitynet} alt="Logo Citynet" className="w-20 h-20 object-contain" />
         </div>
         <button 
             onClick={() => navigate('/login')}
