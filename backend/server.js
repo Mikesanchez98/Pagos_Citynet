@@ -1,6 +1,10 @@
+// backend/server.js
 const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
+
+// Importar rutas
+const authRoutes = require('./routes/auth');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -9,11 +13,14 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
-// Ruta de prueba
-app.get('/api/saludo', (req, res) => {
-  res.json({ mensaje: "¡API de Citynet funcionando!" });
-});
+// RUTAS
+app.use('/api/auth', authRoutes);
 
 app.listen(PORT, () => {
-  console.log(`🚀 Servidor corriendo en http://localhost:${PORT}`);
+  console.log(`🚀 Servidor de Citynet en: http://localhost:${PORT}`);
+});
+
+// Ruta raíz para confirmar que el servidor vive
+app.get('/', (req, res) => {
+  res.send('🚀 Servidor de Citynet operando correctamente');
 });
