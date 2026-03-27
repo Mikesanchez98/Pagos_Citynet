@@ -10,9 +10,11 @@ const PaymentOptions = () => {
     if (option === 'card') {
       // Aquí irá la lógica para abrir el formulario de Openpay
       alert("Redirigiendo a pago con tarjeta...");
+      navigate('/pagar/tarjeta');
     } else {
       // Aquí irá la llamada a tu API para generar la ficha
       alert("Generando ficha para pago en efectivo...");
+      navigate('/pagar/ticket');
     }
   };
 

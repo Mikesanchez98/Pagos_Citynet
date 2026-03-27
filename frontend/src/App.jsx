@@ -3,6 +3,8 @@ import { BrowserRouter as Router, Routes, Route, useNavigate } from 'react-route
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import PaymentOptions from './pages/PaymentOptions';
+import PaymentTicket from './pages/PaymentTicket';
+import CardPayment from './pages/CardPayment';
 
 function App() {
   return (
@@ -11,6 +13,10 @@ function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/pagar" element={<PaymentOptions />} />
+        <Route path="/pagar/ticket" element={<PaymentTicket />} />
+        <Route path="/pagar/tarjeta" element={<CardPayment />} />
+        {/* Redirige a /login por defecto */}
+        <Route path="*" element={<Login />} />
       </Routes>
     </Router>
   );
