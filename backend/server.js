@@ -5,6 +5,7 @@ require('dotenv').config();
 
 // Importar rutas
 const authRoutes = require('./routes/auth');
+const clienteRoutes = require('./routes/cliente');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -15,6 +16,7 @@ app.use(express.json());
 
 // RUTAS
 app.use('/api/auth', authRoutes);
+app.use('/api/cliente', clienteRoutes);
 
 app.listen(PORT, () => {
   console.log(`🚀 Servidor de Citynet en: http://localhost:${PORT}`);

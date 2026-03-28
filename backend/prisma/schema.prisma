@@ -26,11 +26,13 @@ model Cliente {
   servicios     Servicio[]
 }
 
+
 model Servicio {
   id          Int      @id @default(autoincrement())
   plan        String   // Ej: 20 Megas
   precio      Decimal  @db.Decimal(10, 2)
-  estado      String   @default("ACTIVO") // ACTIVO, SUSPENDIDO
+  direccionIp String?  @default("192.168.1.1") // <--- AGREGA ESTO
+  estado      String   @default("ACTIVO")
   cliente     Cliente  @relation(fields: [clienteId], references: [id])
   clienteId   Int
   facturas    Factura[]

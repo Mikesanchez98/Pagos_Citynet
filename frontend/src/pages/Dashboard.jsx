@@ -1,110 +1,169 @@
 // src/pages/Dashboard.jsx
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import logoCitynet from '../assets/logo-citynet-antiguo.png';
+import logoCitynet from '../assets/logo-citynet-antiguo.png'; 
+import axios from 'axios';
 
 const Dashboard = () => {
   const navigate = useNavigate();
+  const [datos, setDatos] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  // Datos simulados (Hardcoded) para la Fase 1.
-  // En la Fase 2, estos datos llegarán desde tu backend (Node.js/Prisma).
-  const clienteData = {
-    nombre: "Juan Pérez",
-    plan: "Hogar 20 Mbps",
-    ip: "10.20.30.45",
-    estado: "activo", // 'activo' o 'suspendido'
-    montoPendiente: 550.00,
-    fechaVencimiento: "05 de Abril, 2026",
-    facturaPagada: false
+  useEffect(() => {
+    const cargarDatos = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) {
+          navigate('/login');
+          return;
+        }
+
+        const response = await axios.get('http://localhost:3001/api/cliente/perfil', {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        setDatos(response.data);
+      } catch (error) {
+        console.error('Error al cargar datos del cliente:', error);
+        if (error.response?.status === 401 || error.response?.status === 403) {
+          localStorage.removeItem('token');
+          navigate('/login');
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    cargarDatos();
+  }, [navigate]);
+
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    navigate('/login');
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+          <p className="text-slate-500 font-medium">Cargando tu portal...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Formatear la fecha para el diseño anterior
+  const fechaVencimientoFormateada = datos?.vencimiento 
+    ? new Date(datos.vencimiento).toLocaleDateString('es-MX', { 
+        day: 'numeric', 
+        month: 'long'
+      })
+    : "Sin adeudos";
 
   return (
     <div className="min-h-screen bg-slate-50 pb-10">
       
-      {/* Navbar Superior */}
+      {/* Navbar Superior (Diseño Original con fondo Azul) */}
       <nav className="bg-primary text-white p-4 shadow-md flex justify-between items-center">
         <div className="flex items-center gap-2">
-            <img src={logoCitynet} alt="Logo Citynet" className="w-20 h-20 object-contain" />
+            {/* Usamos un filtro brightness-0 invert para que el logo negro se vea blanco en el fondo azul */}
+            <img src={logoCitynet} alt="Logo Citynet" className="h-12 object-contain brightness-0 invert" />
         </div>
         <button 
-            onClick={() => navigate('/login')}
-            className="text-sm font-medium bg-blue-700/50 hover:bg-blue-800 px-3 py-1.5 rounded-md transition-colors">
+            onClick={handleLogout}
+            className="text-sm font-medium bg-blue-700/50 hover:bg-blue-800 px-4 py-2 rounded-lg transition-colors border border-blue-400/30">
           Cerrar Sesión
         </button>
       </nav>
 
       {/* Contenedor Principal */}
-      <div className="max-w-3xl mx-auto px-4 mt-6 space-y-6">
+      <div className="max-w-3xl mx-auto px-4 mt-8 space-y-6">
         
-        {/* Saludo */}
+        {/* Saludo y ID de Cliente */}
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">Hola, {clienteData.nombre}</h1>
-          <p className="text-slate-500 text-sm">Resumen de tu cuenta de internet</p>
+          <h1 className="text-3xl font-bold text-slate-800">Hola, {datos?.nombre}</h1>
+          <p className="text-slate-500 text-sm font-medium">Número de Cliente: <span className="text-primary font-bold">{datos?.numCliente}</span></p>
         </div>
 
         {/* Tarjeta 1: Estado del Servicio (Técnico) */}
-        <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between">
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between">
           <div>
-            <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-1">Plan Contratado</p>
-            <p className="font-bold text-slate-800">{clienteData.plan}</p>
-            <p className="text-xs text-slate-500 mt-1">IP: {clienteData.ip}</p>
+            <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-1">Plan Contratado</p>
+            <p className="font-extrabold text-slate-800 text-xl">{datos?.plan || 'Básico'}</p>
+            <div className="flex items-center gap-2 mt-2">
+                <span className="text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded font-mono uppercase">IP asignada</span>
+                <p className="text-sm font-mono text-blue-600 font-semibold">{datos?.ip || '0.0.0.0'}</p>
+            </div>
           </div>
           
           <div className="flex flex-col items-end">
-            <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-1">Estatus</span>
-            {clienteData.estado === 'activo' ? (
-              <div className="flex items-center gap-1.5 bg-green-50 text-green-700 px-3 py-1 rounded-full border border-green-200">
-                <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-                <span className="text-sm font-semibold">Activo</span>
+            <span className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-2">Estatus</span>
+            {datos?.estado?.toLowerCase() === 'activo' ? (
+              <div className="flex items-center gap-2 bg-green-50 text-green-700 px-4 py-1.5 rounded-full border border-green-200">
+                <span className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse"></span>
+                <span className="text-sm font-bold uppercase">Activo</span>
               </div>
             ) : (
-              <div className="flex items-center gap-1.5 bg-red-50 text-red-700 px-3 py-1 rounded-full border border-red-200">
-                <span className="w-2 h-2 rounded-full bg-red-500"></span>
-                <span className="text-sm font-semibold">Suspendido</span>
+              <div className="flex items-center gap-2 bg-red-50 text-red-700 px-4 py-1.5 rounded-full border border-red-200">
+                <span className="w-2.5 h-2.5 rounded-full bg-red-500"></span>
+                <span className="text-sm font-bold uppercase">Suspendido</span>
               </div>
             )}
           </div>
         </div>
 
-        {/* Tarjeta 2: Resumen Financiero y Botón de Pago */}
-        <div className="bg-white rounded-2xl shadow-md border border-slate-100 overflow-hidden">
-          <div className="p-6 text-center border-b border-slate-50">
-            <p className="text-slate-500 font-medium mb-2">Total a Pagar</p>
-            <h2 className="text-5xl font-extrabold text-slate-800 mb-2">
-              ${clienteData.montoPendiente.toFixed(2)} <span className="text-xl text-slate-400 font-normal">MXN</span>
-            </h2>
-            <p className="text-sm text-slate-500">
-              Vence el: <span className="font-semibold text-slate-700">{clienteData.fechaVencimiento}</span>
-            </p>
+        {/* Tarjeta 2: Resumen Financiero (El diseño grande que te gustaba) */}
+        <div className="bg-white rounded-3xl shadow-xl border border-slate-100 overflow-hidden">
+          <div className="p-8 text-center border-b border-slate-50">
+            <p className="text-slate-500 font-bold uppercase text-xs tracking-widest mb-3">Total a Pagar</p>
+            <div className="flex items-center justify-center gap-1">
+                <span className="text-2xl font-bold text-slate-400 self-start mt-2">$</span>
+                <h2 className="text-6xl font-black text-slate-800 tracking-tighter">
+                    {Number(datos?.montoPendiente || 0).toFixed(2)}
+                </h2>
+                <span className="text-lg text-slate-400 font-bold ml-2">MXN</span>
+            </div>
+            
+            <div className="mt-4 inline-block bg-slate-50 border border-slate-100 px-4 py-2 rounded-xl">
+                <p className="text-sm text-slate-500 font-medium">
+                  Próximo vencimiento: <span className="font-bold text-slate-800">{fechaVencimientoFormateada}</span>
+                </p>
+            </div>
           </div>
           
           <div className="p-6 bg-slate-50/50">
-            {clienteData.facturaPagada ? (
-              <div className="w-full py-4 text-center text-green-700 font-bold bg-green-100 rounded-xl border border-green-200">
-                ¡Gracias! Tu recibo está pagado.
+            {datos?.montoPendiente <= 0 ? (
+              <div className="w-full py-4 text-center text-green-700 font-bold bg-green-100/50 rounded-2xl border border-green-200 flex items-center justify-center gap-2">
+                ✨ ¡Tu cuenta está al día! No tienes pagos pendientes.
               </div>
             ) : (
               <button 
                 onClick={() => navigate('/pagar')}
-                className="w-full bg-primary hover:bg-blue-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-blue-200/50 transition-all active:scale-[0.98] text-lg flex items-center justify-center gap-2">
-                <span>💳</span> PAGAR AHORA
+                className="w-full bg-primary hover:bg-blue-700 text-white font-black py-5 rounded-2xl shadow-lg shadow-blue-200/50 transition-all active:scale-[0.98] text-xl flex items-center justify-center gap-3">
+                💳 PAGAR AHORA
               </button>
             )}
           </div>
         </div>
 
-        {/* Historial Rápido (Opcional visualmente) */}
-        <div className="pt-4">
-          <h3 className="text-slate-700 font-semibold mb-3">Último movimiento</h3>
-          <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex justify-between items-center text-sm">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500">📄</div>
+        {/* Historial Rápido (Diseño original) */}
+        <div className="pt-2">
+          <h3 className="text-slate-800 font-bold mb-4 ml-1">Últimos movimientos</h3>
+          <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex justify-between items-center transition-hover hover:border-blue-200">
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-xl">📄</div>
               <div>
-                <p className="font-medium text-slate-700">Recibo de Marzo</p>
-                <p className="text-slate-400 text-xs">Pagado con Tarjeta</p>
+                <p className="font-bold text-slate-700">Pago de Mensualidad</p>
+                <p className="text-slate-400 text-xs font-medium">Servicio de Internet Fibra</p>
               </div>
             </div>
-            <span className="font-bold text-slate-700">$550.00</span>
+            <div className="text-right">
+                <p className="font-black text-slate-700">$550.00</p>
+                <p className="text-[10px] text-green-500 font-bold uppercase">Completado</p>
+            </div>
           </div>
         </div>
 
