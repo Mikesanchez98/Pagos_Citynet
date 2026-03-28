@@ -59,7 +59,7 @@ const Login = () => {
           )}
 
           <div>
-            <label className="block text-xs font-bold text-slate-500 uppercase mb-2 ml-1">Correo Electrónico</label>
+            <label className="block text-xs font-bold text-slate-500 uppercase mb-2 ml-1">Correo electrónico o número de cliente</label>
             <input 
               type="text" 
               required
