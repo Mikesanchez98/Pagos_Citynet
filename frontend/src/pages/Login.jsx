@@ -1,79 +1,95 @@
 // src/pages/Login.jsx
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import axios from 'axios'; // 1. Importamos Axios
 import logoCitynet from '../assets/logo-citynet-antiguo.png';
 
 const Login = () => {
-  const [formData, setFormData] = useState({ identifier: '', password: '' });
   const navigate = useNavigate();
+  const [identifier, setIdentifier] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
-    console.log("Intentando login con:", formData);
-    // Aquí irá la lógica para conectar con tu backend local
-    navigate('/dashboard');
+    setError('');
+    setLoading(true);
+
+    try {
+      // 2. Petición real a tu servidor de Node.js
+      const response = await axios.post('http://localhost:3001/api/auth/login', {
+        identifier, // Puede ser email o numCliente
+        password
+      });
+
+      // 3. Si el login es exitoso, guardamos el Token y los datos del usuario
+      // Usamos localStorage para que la sesión no se cierre al refrescar
+      localStorage.setItem('token', response.data.token);
+      localStorage.setItem('user', JSON.stringify(response.data.usuario));
+
+      // 4. ¡Bienvenidos al Dashboard!
+      navigate('/dashboard');
+
+    } catch (err) {
+      // Manejo de errores (Credenciales incorrectas o servidor caído)
+      setError(err.response?.data?.error || 'Error al conectar con el servidor');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-6">
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-8 border border-slate-100">
+    <div className="min-h-screen bg-slate-100 flex items-center justify-center p-6">
+      <div className="max-w-md w-full bg-white rounded-3xl shadow-xl p-8 border border-slate-200">
         
-        {/* Logo / Header */}
         <div className="text-center mb-10">
-          <div className="w-60 h-60 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
-            <img 
-                src={logoCitynet} 
-                alt="Logo Citynet" 
-                className="w-full h-full object-contain p-0"
-            />
+          <div className="w-32 h-32 bg-white rounded-full flex items-center justify-center mx-auto mb-4 overflow-hidden shadow-sm border border-slate-100">
+            <img src={logoCitynet} alt="Logo Citynet" className="h-auto w-auto max-w-[85%] object-contain" />
           </div>
           <h1 className="text-2xl font-bold text-slate-800">Portal de Clientes</h1>
-          <p className="text-slate-500 mt-2">Ingresa para gestionar tu internet</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Input de Identificador */}
+        <form onSubmit={handleLogin} className="space-y-6">
+          {/* Mensaje de Error Visual */}
+          {error && (
+            <div className="bg-red-50 text-red-600 p-4 rounded-xl text-sm font-medium border border-red-100 animate-bounce">
+              ⚠️ {error}
+            </div>
+          )}
+
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">
-              Correo o Número de Cliente
-            </label>
-            <input
-              type="text"
+            <label className="block text-xs font-bold text-slate-500 uppercase mb-2 ml-1">Correo Electrónico</label>
+            <input 
+              type="text" 
               required
-              className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
-              placeholder="Ej: 10452"
-              onChange={(e) => setFormData({...formData, identifier: e.target.value})}
+              className="w-full p-4 rounded-xl border border-slate-200 focus:ring-2 focus:ring-primary outline-none transition-all"
+              placeholder="ej. cliente@citynet.com o CT-1001"
+              value={identifier}
+              onChange={(e) => setIdentifier(e.target.value)}
             />
           </div>
 
-          {/* Input de Password */}
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">
-              Contraseña
-            </label>
-            <input
-              type="password"
+            <label className="block text-xs font-bold text-slate-500 uppercase mb-2 ml-1">Contraseña</label>
+            <input 
+              type="password" 
               required
-              className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
+              className="w-full p-4 rounded-xl border border-slate-200 focus:ring-2 focus:ring-primary outline-none transition-all"
               placeholder="••••••••"
-              onChange={(e) => setFormData({...formData, password: e.target.value})}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
             />
           </div>
 
-          <button
+          <button 
             type="submit"
-            className="w-full bg-primary hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg shadow-lg shadow-blue-200 transition-all active:scale-[0.98]"
+            disabled={loading}
+            className={`w-full py-4 rounded-xl font-bold text-white shadow-lg transition-all active:scale-[0.98] ${loading ? 'bg-slate-400 cursor-not-allowed' : 'bg-primary hover:bg-blue-700 shadow-blue-200'}`}
           >
-            Iniciar Sesión
+            {loading ? 'VERIFICANDO...' : 'INGRESAR'}
           </button>
         </form>
-
-        <div className="mt-8 text-center border-t border-slate-100 pt-6">
-          <p className="text-sm text-slate-500">
-            ¿Problemas con tu acceso? <br />
-            <span className="text-primary font-medium cursor-pointer">Contacta a soporte técnico</span>
-          </p>
-        </div>
       </div>
     </div>
   );

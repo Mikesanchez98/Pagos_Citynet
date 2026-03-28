@@ -8,47 +8,52 @@ const prisma = new PrismaClient();
 const JWT_SECRET = process.env.JWT_SECRET || 'clave_secreta_citynet';
 
 // RUTA: POST /api/auth/login
+// backend/routes/auth.js
+
 router.post('/login', async (req, res) => {
-  const { email, password } = req.body;
+  const { identifier, password } = req.body; // Cambiamos 'email' por 'identifier'
 
   try {
-    // 1. Buscar al usuario por email e incluir sus datos de cliente
-    const usuario = await prisma.usuario.findUnique({
-      where: { email },
+    // Buscamos al usuario que coincida con el email OR que su Cliente asociado tenga ese numCliente
+    const usuario = await prisma.usuario.findFirst({
+      where: {
+        OR: [
+          { email: identifier },
+          { 
+            cliente: {
+              numCliente: identifier // Aquí buscamos por CT-1001, por ejemplo
+            }
+          }
+        ]
+      },
       include: { cliente: true }
     });
 
-    // 2. Verificar si existe el usuario
     if (!usuario) {
-      return res.status(401).json({ error: 'Credenciales inválidas' });
+      return res.status(401).json({ error: 'Usuario o número de cliente no encontrado' });
     }
 
-    // 3. Verificar contraseña (NOTA: En producción usaremos bcrypt.compare)
     if (usuario.password !== password) {
-      return res.status(401).json({ error: 'Credenciales inválidas' });
+      return res.status(401).json({ error: 'Contraseña incorrecta' });
     }
 
-    // 4. Generar el Token de acceso (JWT)
     const token = jwt.sign(
-      { usuarioId: usuario.id, email: usuario.email, clienteId: usuario.cliente?.id },
+      { usuarioId: usuario.id, clienteId: usuario.cliente?.id },
       JWT_SECRET,
-      { expiresIn: '8h' } // El token expira en 8 horas
+      { expiresIn: '8h' }
     );
 
-    // 5. Enviar respuesta al frontend
     res.json({
-      mensaje: 'Login exitoso',
       token,
       usuario: {
         nombre: usuario.cliente?.nombre,
-        email: usuario.email,
-        numCliente: usuario.cliente?.numCliente
+        numCliente: usuario.cliente?.numCliente,
+        email: usuario.email
       }
     });
 
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Error interno del servidor' });
+    res.status(500).json({ error: 'Error en el servidor' });
   }
 });
 
