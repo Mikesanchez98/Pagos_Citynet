@@ -11,49 +11,41 @@ const JWT_SECRET = process.env.JWT_SECRET || 'clave_secreta_citynet';
 // backend/routes/auth.js
 
 router.post('/login', async (req, res) => {
-  const { identifier, password } = req.body; // Cambiamos 'email' por 'identifier'
+  const { identifier, password } = req.body;
 
   try {
-    // Buscamos al usuario que coincida con el email OR que su Cliente asociado tenga ese numCliente
     const usuario = await prisma.usuario.findFirst({
       where: {
         OR: [
           { email: identifier },
-          { 
-            cliente: {
-              numCliente: identifier // Aquí buscamos por CT-1001, por ejemplo
-            }
-          }
+          { cliente: { numCliente: identifier } }
         ]
       },
       include: { cliente: true }
     });
 
-    if (!usuario) {
-      return res.status(401).json({ error: 'Usuario o número de cliente no encontrado' });
-    }
-
-    if (usuario.password !== password) {
-      return res.status(401).json({ error: 'Contraseña incorrecta' });
+    if (!usuario || usuario.password !== password) {
+      return res.status(401).json({ error: 'Credenciales inválidas' });
     }
 
     const token = jwt.sign(
-      { usuarioId: usuario.id, clienteId: usuario.cliente?.id },
-      JWT_SECRET,
+      { usuarioId: usuario.id, rol: usuario.rol, clienteId: usuario.cliente?.id },
+      process.env.JWT_SECRET || 'clave_secreta_citynet',
       { expiresIn: '8h' }
     );
 
     res.json({
       token,
       usuario: {
-        nombre: usuario.cliente?.nombre,
-        numCliente: usuario.cliente?.numCliente,
-        email: usuario.email
+        id: usuario.id,
+        email: usuario.email,
+        rol: usuario.rol, // <--- Enviamos el rol al frontend
+        nombre: usuario.cliente?.nombre || 'Administrador' // Nombre por defecto si no es cliente
       }
     });
 
   } catch (error) {
-    res.status(500).json({ error: 'Error en el servidor' });
+    res.status(500).json({ error: 'Error en el login' });
   }
 });
 

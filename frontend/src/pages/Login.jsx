@@ -29,7 +29,11 @@ const Login = () => {
       localStorage.setItem('user', JSON.stringify(response.data.usuario));
 
       // 4. ¡Bienvenidos al Dashboard!
-      navigate('/dashboard');
+      if (response.data.usuario.rol === 'ADMIN') {
+        navigate('/admin'); // Al panel de control
+      } else {
+        navigate('/dashboard'); // Al portal de cliente
+      }
 
     } catch (err) {
       // Manejo de errores (Credenciales incorrectas o servidor caído)
