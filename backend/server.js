@@ -7,6 +7,7 @@ require('dotenv').config();
 const authRoutes = require('./routes/auth');
 const clienteRoutes = require('./routes/cliente');
 const adminRoutes = require('./routes/admin');
+require('./services/automatizacion'); // Importamos el servicio de automatización (cron job)
 
 const app = express();
 const PORT = process.env.PORT || 3001;

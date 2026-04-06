@@ -44,6 +44,24 @@ const Dashboard = () => {
     navigate('/login');
   };
 
+  // --- NUEVA FUNCIÓN PARA OPENPAY ---
+  const handlePagar = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.post('http://localhost:3001/api/pagos/crear-checkout', {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (response.data.url) {
+        window.location.href = response.data.url;
+      }
+    } catch (error) {
+      console.error("Error al generar pago:", error);
+      alert("No se pudo generar el enlace de pago. Verifica que tengas facturas pendientes.");
+    }
+  };
+  // ----------------------------------
+
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
@@ -121,9 +139,12 @@ const Dashboard = () => {
             <p className="text-slate-500 font-bold uppercase text-xs tracking-widest mb-3">Total a Pagar</p>
             <div className="flex items-center justify-center gap-1">
                 <span className="text-2xl font-bold text-slate-400 self-start mt-2">$</span>
+                
+                {/* ELIMINA CUALQUIER NÚMERO QUE ESTÉ AQUÍ ESCRITO A MANO */}
                 <h2 className="text-6xl font-black text-slate-800 tracking-tighter">
-                    {Number(datos?.montoPendiente || 0).toFixed(2)}
+                    {Number(datos?.montoPendiente || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}
                 </h2>
+                
                 <span className="text-lg text-slate-400 font-bold ml-2">MXN</span>
             </div>
             
@@ -141,7 +162,7 @@ const Dashboard = () => {
               </div>
             ) : (
               <button 
-                onClick={() => navigate('/pagar')}
+                onClick={handlePagar} /* <--- AQUÍ CAMBIÉ EL onClick POR handlePagar */
                 className="w-full bg-primary hover:bg-blue-700 text-white font-black py-5 rounded-2xl shadow-lg shadow-blue-200/50 transition-all active:scale-[0.98] text-xl flex items-center justify-center gap-3">
                 💳 PAGAR AHORA
               </button>
@@ -160,9 +181,11 @@ const Dashboard = () => {
                 <p className="text-slate-400 text-xs font-medium">Servicio de Internet Fibra</p>
               </div>
             </div>
+            {/* En la sección de Historial Rápido */}
             <div className="text-right">
-                <p className="font-black text-slate-700">$550.00</p>
-                <p className="text-[10px] text-green-500 font-bold uppercase">Completado</p>
+                {/* Antes decía $550.00, ahora usa el precio del plan del cliente */}
+                <p className="font-black text-slate-700">${Number(datos?.montoPendiente || 0).toFixed(2)}</p>
+                <p className="text-[10px] text-green-500 font-bold uppercase">Pendiente</p>
             </div>
           </div>
         </div>

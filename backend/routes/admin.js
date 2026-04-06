@@ -18,10 +18,16 @@ const esAdmin = (req, res, next) => {
 router.get('/clientes', verificarToken, async (req, res) => {
   try {
     const clientes = await prisma.cliente.findMany({
-      include: { servicios: true }
+      include: { 
+        usuarios: true,
+        servicios: {
+          include: { facturas: true }
+        }
+      }
     });
     res.json(clientes);
   } catch (error) {
+    console.error("Error obteniendo clientes:", error);
     res.status(500).json({ error: 'Error al obtener lista' });
   }
 });
@@ -86,24 +92,23 @@ router.post('/registrar-cliente', verificarToken, esAdmin, async (req, res) => {
   }
 });
 
-// POST /api/admin/generar-facturas-mes
+// --- ACTUALIZACIÓN: GENERAR FACTURAS INTELIGENTES ---
 router.post('/generar-facturas-mes', verificarToken, async (req, res) => {
   try {
-    // 1. Obtener todos los servicios activos
     const servicios = await prisma.servicio.findMany({
       where: { estado: 'ACTIVO' }
     });
 
-    // 2. Definir fecha de vencimiento (Ej: 5 del próximo mes)
     const hoy = new Date();
-    const vencimiento = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 5);
+    // Vencimiento: Día 5 del próximo mes
+    const vencimiento = new Date();
+    vencimiento.setDate(vencimiento.getDate() + 5);
 
-    // 3. Crear las facturas en una transacción
-    const facturasCreadas = await prisma.$transaction(
+    const facturas = await prisma.$transaction(
       servicios.map((s) => 
         prisma.factura.create({
           data: {
-            monto: s.precio,
+            monto: s.precio, // <--- USA EL PRECIO INDIVIDUAL DE CADA PLAN
             vencimiento: vencimiento,
             pagada: false,
             servicioId: s.id
@@ -112,13 +117,66 @@ router.post('/generar-facturas-mes', verificarToken, async (req, res) => {
       )
     );
 
-    res.json({ 
-      mensaje: `Se generaron ${facturasCreadas.length} facturas para el próximo mes.`,
-      vencimiento: vencimiento.toLocaleDateString()
-    });
+    res.json({ mensaje: `Se generaron ${facturas.length} facturas personalizadas.` });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Error al generar facturacion masiva' });
+    res.status(500).json({ error: 'Error en facturación masiva' });
+  }
+});
+
+// RUTA PARA ACTUALIZAR CLIENTE
+router.put('/cliente/:id', verificarToken, async (req, res) => {
+  const { id } = req.params;
+  const { nombre, plan, precio, ip } = req.body;
+
+  try {
+    // Usamos una actualización que incluya los datos del servicio vinculado
+    const clienteActualizado = await prisma.cliente.update({
+      where: { id: parseInt(id) },
+      data: {
+        nombre: nombre,
+        // Actualizamos el servicio asociado a este cliente
+        servicios: {
+          updateMany: {
+            where: { clienteId: parseInt(id) },
+            data: {
+              plan: plan,
+              precio: parseFloat(precio),
+              direccionIp: ip
+            }
+          }
+        }
+      }
+    });
+
+    res.json({ mensaje: "Cliente actualizado con éxito", clienteActualizado });
+  } catch (error) {
+    console.error("Error al editar:", error);
+    res.status(500).json({ error: "Error interno al intentar actualizar el cliente" });
+  }
+});
+
+// Marcar factura como pagada manualmente
+router.patch('/factura/:id/pagar', verificarToken, async (req, res) => {
+  try {
+    await prisma.factura.update({
+      where: { id: parseInt(req.params.id) },
+      data: { pagada: true }
+    });
+    res.json({ mensaje: "Factura marcada como pagada" });
+  } catch (error) {
+    res.status(500).json({ error: "No se pudo actualizar" });
+  }
+});
+
+// Eliminar factura
+router.delete('/factura/:id', verificarToken, async (req, res) => {
+  try {
+    await prisma.factura.delete({
+      where: { id: parseInt(req.params.id) }
+    });
+    res.json({ mensaje: "Factura eliminada" });
+  } catch (error) {
+    res.status(500).json({ error: "No se pudo eliminar" });
   }
 });
 
