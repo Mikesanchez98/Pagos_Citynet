@@ -14,21 +14,42 @@ const esAdmin = (req, res, next) => {
 
 // backend/routes/admin.js
 
-// 1. Obtener todos los clientes con sus servicios
+// 1. Obtener todos los clientes (Corregido)
 router.get('/clientes', verificarToken, async (req, res) => {
   try {
     const clientes = await prisma.cliente.findMany({
       include: { 
-        usuarios: true,
+        usuario: true, // Corregido: era 'usuario', no 'usuarios'
         servicios: {
-          include: { facturas: true }
+          // Traemos SOLO las facturas pendientes. Si el array tiene items = es Moroso.
+          include: { facturas: { where: { pagada: false } } } 
         }
       }
     });
     res.json(clientes);
   } catch (error) {
-    console.error("Error obteniendo clientes:", error);
+    console.error("[Error Admin Clientes]:", error);
     res.status(500).json({ error: 'Error al obtener lista' });
+  }
+});
+
+// 2. NUEVA RUTA: Obtener un cliente específico (Resuelve la Pérdida de Contexto en Edición)
+router.get('/cliente/:id', verificarToken, esAdmin, async (req, res) => {
+  try {
+    const cliente = await prisma.cliente.findUnique({
+      where: { id: parseInt(req.params.id) },
+      include: { 
+        usuario: true, 
+        servicios: true 
+      }
+    });
+
+    if (!cliente) return res.status(404).json({ error: "Cliente no encontrado" });
+
+    res.json(cliente);
+  } catch (error) {
+    console.error("[Error Obtener Cliente]:", error);
+    res.status(500).json({ error: "No se pudo cargar la información del cliente" });
   }
 });
 

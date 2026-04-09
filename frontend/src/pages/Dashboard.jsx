@@ -170,26 +170,33 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* Historial Rápido (Diseño original) */}
+        {/* Historial Rápido (Lógica Condicional Aplicada) */}
         <div className="pt-2">
-          <h3 className="text-slate-800 font-bold mb-4 ml-1">Últimos movimientos</h3>
-          <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex justify-between items-center transition-hover hover:border-blue-200">
+          <h3 className="text-slate-800 font-bold mb-4 ml-1">Estado de Cuenta</h3>
+          <div className={`p-5 rounded-2xl shadow-sm border flex justify-between items-center transition-hover ${datos?.montoPendiente > 0 ? 'bg-white border-slate-100 hover:border-red-200' : 'bg-green-50 border-green-100'}`}>
             <div className="flex items-center gap-4">
-              <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-xl">📄</div>
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xl ${datos?.montoPendiente > 0 ? 'bg-blue-50' : 'bg-green-100'}`}>
+                {datos?.montoPendiente > 0 ? '📄' : '✅'}
+              </div>
               <div>
-                <p className="font-bold text-slate-700">Pago de Mensualidad</p>
-                <p className="text-slate-400 text-xs font-medium">Servicio de Internet Fibra</p>
+                <p className={`font-bold ${datos?.montoPendiente > 0 ? 'text-slate-700' : 'text-green-800'}`}>
+                  {datos?.montoPendiente > 0 ? 'Pago de Mensualidad' : 'Mensualidad Cubierta'}
+                </p>
+                <p className={`${datos?.montoPendiente > 0 ? 'text-slate-400' : 'text-green-600'} text-xs font-medium`}>Servicio de Internet Fibra</p>
               </div>
             </div>
-            {/* En la sección de Historial Rápido */}
             <div className="text-right">
-                {/* Antes decía $550.00, ahora usa el precio del plan del cliente */}
-                <p className="font-black text-slate-700">${Number(datos?.montoPendiente || 0).toFixed(2)}</p>
-                <p className="text-[10px] text-green-500 font-bold uppercase">Pendiente</p>
+                <p className={`font-black ${datos?.montoPendiente > 0 ? 'text-slate-700' : 'text-green-700'}`}>
+                  ${Number(datos?.montoPendiente || 0).toFixed(2)}
+                </p>
+                {datos?.montoPendiente > 0 ? (
+                  <p className="text-[10px] text-red-500 font-bold uppercase">Pendiente</p>
+                ) : (
+                  <p className="text-[10px] text-green-600 font-bold uppercase">Pagado</p>
+                )}
             </div>
           </div>
         </div>
-
       </div>
     </div>
   );

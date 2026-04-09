@@ -15,7 +15,6 @@ const openpayAPI = axios.create({
   }
 });
 
-// backend/routes/pagos.js
 router.post('/crear-checkout', verificarToken, async (req, res) => {
   try {
     const cliente = await prisma.cliente.findUnique({
@@ -28,29 +27,32 @@ router.post('/crear-checkout', verificarToken, async (req, res) => {
       }
     });
 
-    const servicio = cliente.servicios[0];
-    const facturasPendientes = servicio.facturas;
+    if (!cliente) return res.status(404).json({ error: "Cliente no encontrado." });
+
+    // Aplanamos todas las facturas pendientes de TODOS los servicios del cliente
+    const facturasPendientes = cliente.servicios.flatMap(s => s.facturas);
 
     if (facturasPendientes.length === 0) {
       return res.status(400).json({ error: "No tienes facturas pendientes de pago." });
     }
 
-    // CORRECCIÓN CLAVE: Forzar que el monto sea numérico y no texto
+    // Casteo estricto del Decimal de Prisma a Number de JS
     const montoTotal = facturasPendientes.reduce((acc, f) => {
-      return acc + parseFloat(f.monto); 
+      return acc + Number(f.monto); 
     }, 0);
 
-    // Si por alguna razón el monto es 0 o inválido
+    console.log(`[Checkout] Cliente ${cliente.id} | Facturas a pagar: ${facturasPendientes.length} | Total: $${montoTotal}`);
+
     if (isNaN(montoTotal) || montoTotal <= 0) {
       return res.status(400).json({ error: "El monto a pagar no es válido." });
     }
 
-    // Configuración para Openpay
     const checkoutData = {
       method: 'card',
-      amount: montoTotal.toFixed(2), // Openpay requiere 2 decimales en string
-      description: `Pago Internet Citynet - ${cliente.nombre}`,
-      order_id: `ORD-${Date.now()}-${cliente.id}`, // ID único para la orden
+      amount: montoTotal.toFixed(2), 
+      description: `Pago Acumulado Internet Citynet - ${cliente.nombre}`,
+      // El índice 2 del split será el cliente.id, clave para el webhook
+      order_id: `ORD-${Date.now()}-${cliente.id}`, 
       customer: {
         name: cliente.nombre,
         email: cliente.usuario.email
@@ -60,12 +62,10 @@ router.post('/crear-checkout', verificarToken, async (req, res) => {
       cancel_url: 'http://localhost:3000/dashboard?pago=cancelado'
     };
 
-    // Aquí va tu llamada a axios.post a Openpay (o la librería si la conservaste)
-    // const response = await openpay.checkouts.create(checkoutData);
-    // res.json({ url: response.payment_url });
+    // Lógica de Axios a Openpay aquí...
 
   } catch (error) {
-    console.error("Error detallado:", error.response?.data || error.message);
+    console.error("[Error Checkout]:", error.response?.data || error.message);
     res.status(500).json({ error: "Error interno en la pasarela" });
   }
 });

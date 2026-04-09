@@ -8,7 +8,7 @@ const prisma = new PrismaClient();
 
 // backend/routes/cliente.js
 
-// backend/routes/cliente.js
+// Endpoint del Dashboard
 router.get('/perfil', verificarToken, async (req, res) => {
   try {
     const cliente = await prisma.cliente.findUnique({
@@ -20,55 +20,70 @@ router.get('/perfil', verificarToken, async (req, res) => {
       }
     });
 
-    const servicio = cliente.servicios[0];
+    if (!cliente || cliente.servicios.length === 0) {
+      return res.status(404).json({ error: "Datos de servicio incompletos" });
+    }
+
+    // Suma robusta de todos los servicios
+    const facturasPendientes = cliente.servicios.flatMap(s => s.facturas);
+    const montoPendiente = facturasPendientes.reduce((acc, f) => acc + Number(f.monto), 0);
     
-    // Suma limpia asegurando tipos numéricos
-    const montoPendiente = servicio.facturas.reduce((acc, f) => acc + parseFloat(f.monto), 0);
+    // Tomamos datos representativos del primer servicio para la UI
+    const servicioPrincipal = cliente.servicios[0];
 
     res.json({
       nombre: cliente.nombre,
       numCliente: cliente.numCliente,
-      plan: servicio.plan,
-      ip: servicio.direccionIp,
-      montoPendiente: montoPendiente, // Enviamos el número real
-      vencimiento: servicio.facturas[0]?.vencimiento || null,
-      estado: servicio.estado
+      plan: servicioPrincipal.plan,
+      ip: servicioPrincipal.direccionIp,
+      montoPendiente: montoPendiente,
+      vencimiento: facturasPendientes[0]?.vencimiento || null,
+      estado: servicioPrincipal.estado
     });
   } catch (error) {
+    console.error("[Error Perfil]:", error);
     res.status(500).json({ error: "Error al obtener perfil" });
   }
 });
 
-// Ruta que Openpay llamará automáticamente (Webhook)
+// El Webhook Corregido
 router.post('/webhook', async (req, res) => {
   const evento = req.body;
 
-  // Verificamos que el evento sea de un pago completado
   if (evento.type === 'charge.confirmed') {
-    const ordenId = evento.transaction.order_id; // Ej: "ORD-123-timestamp"
-    const facturaId = ordenId.split('-')[1]; // Extraemos el ID de la factura
+    const ordenId = evento.transaction.order_id; 
+    const partesId = ordenId.split('-'); // ["ORD", "1689000000", "5"]
+    
+    // Extraemos el clienteId, NO el timestamp
+    const clienteId = parseInt(partesId[2]); 
+
+    if (!clienteId || isNaN(clienteId)) {
+      console.error("❌ Webhook fallido: No se pudo extraer el ID del cliente de la orden:", ordenId);
+      return res.sendStatus(200); 
+    }
 
     try {
-      // 1. Marcar factura como pagada
-      await prisma.factura.update({
-        where: { id: parseInt(facturaId) },
+      // 1. Marcar TODAS las facturas pendientes de este cliente como pagadas
+      const facturasActualizadas = await prisma.factura.updateMany({
+        where: { 
+          pagada: false,
+          servicio: { clienteId: clienteId } 
+        },
         data: { pagada: true }
       });
 
-      // 2. Opcional: Si el servicio estaba suspendido, activarlo automáticamente
-      const factura = await prisma.factura.findUnique({ where: { id: parseInt(facturaId) } });
-      await prisma.servicio.update({
-        where: { id: factura.servicioId },
+      // 2. Reactivar TODOS los servicios suspendidos del cliente
+      const serviciosActualizados = await prisma.servicio.updateMany({
+        where: { clienteId: clienteId, estado: 'SUSPENDIDO' },
         data: { estado: 'ACTIVO' }
       });
 
-      console.log(`✅ Pago procesado para factura #${facturaId}`);
+      console.log(`✅ Pago procesado para Cliente #${clienteId}. Facturas saldadas: ${facturasActualizadas.count}. Servicios reactivados: ${serviciosActualizados.count}`);
     } catch (error) {
-      console.error("Error al actualizar tras pago:", error);
+      console.error("❌ Error DB al actualizar tras pago:", error);
     }
   }
 
-  // Siempre responder 200 a Openpay para que no reintente el envío
   res.sendStatus(200);
 });
 

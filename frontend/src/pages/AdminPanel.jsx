@@ -104,26 +104,40 @@ const AdminPanel = () => {
     setForm({ email: '', password: '', nombre: '', numCliente: '', plan: 'Fibra 20 Mbps', precio: 550, ip: '' });
   };
 
-  // --- ESTA ES LA FUNCIÓN QUE FALTABA PARA CARGAR LOS DATOS ---
-  const prepararEdicion = (cliente) => {
-    setEditandoId(cliente.id);
-    
-    // Extraemos el primer servicio de forma segura
-    const servicioActual = cliente.servicios && cliente.servicios.length > 0 
-      ? cliente.servicios[0] 
-      : {};
-  
-    setForm({
-      nombre: cliente.nombre || '',
-      numCliente: cliente.numCliente || '',
-      email: cliente.usuario?.email || '', 
-      plan: servicioActual.plan || 'Fibra 20 Mbps',
-      precio: servicioActual.precio || 550,
-      ip: servicioActual.direccionIp || servicioActual.ip || '', 
-      password: '****' // Ponemos un placeholder porque no enviamos la contraseña real
-    });
-    
+  // --- FUNCIÓN REFACCIONADA PARA OBTENER DATOS FRESCOS ---
+  const prepararEdicion = async (clienteParaEditar) => {
+    // 1. Ponemos el ID en el estado y scrolleamos arriba
+    setEditandoId(clienteParaEditar.id);
     window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    try {
+      // 2. Traemos la información fresca y profunda desde el backend
+      const token = localStorage.getItem('token');
+      const res = await axios.get(`http://localhost:3001/api/admin/cliente/${clienteParaEditar.id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      const clienteFresco = res.data;
+      const servicioActual = clienteFresco.servicios && clienteFresco.servicios.length > 0 
+        ? clienteFresco.servicios[0] 
+        : {};
+
+      // 3. Poblamos el formulario
+      setForm({
+        nombre: clienteFresco.nombre || '',
+        numCliente: clienteFresco.numCliente || '',
+        email: clienteFresco.usuario?.email || '', 
+        plan: servicioActual.plan || 'Fibra 20 Mbps',
+        precio: servicioActual.precio || 550,
+        ip: servicioActual.direccionIp || '', 
+        password: '****' // No sobreescribir la contraseña
+      });
+
+    } catch (error) {
+      console.error("Error al cargar detalles del cliente:", error);
+      alert("Hubo un problema al cargar los datos recientes del cliente.");
+      cancelarEdicion();
+    }
   };
 
   const toggleEstatus = async (servicioId, estadoActual) => {
