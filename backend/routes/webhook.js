@@ -3,52 +3,41 @@ const router = express.Router();
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
-router.post('/openpay-webhook', async (req, res) => {
+// POST /api/webhooks/openpay
+router.post('/openpay', async (req, res) => {
   const evento = req.body;
 
-  // Solo nos interesa cuando la transacción fue completada con éxito
-  if (evento.type === 'verification' || evento.type === 'charge.succeeded') {
-    
-    // 1. Si es de verificación inicial de Openpay, respondemos 200
-    if (evento.type === 'verification') return res.sendStatus(200);
+  if (evento.type === 'charge.confirmed') {
+    const ordenId = evento.transaction.order_id; 
+    const partesId = ordenId.split('-'); 
+    const clienteId = parseInt(partesId[2]); 
 
-    const transaction = evento.transaction;
-    
+    if (!clienteId || isNaN(clienteId)) {
+      console.error("❌ [Webhook] Error: No se pudo extraer el ID del cliente de la orden:", ordenId);
+      return res.sendStatus(200); 
+    }
+
     try {
-      // 2. Buscamos la factura que coincida con el ID de orden o descripción
-      // Nota: Al crear el checkout, debiste enviar el invoiceId en la descripción o metadata
-      const factura = await prisma.factura.findFirst({
-        where: { 
-          // Ajusta esto según cómo guardes tus IDs de transacción
-          id: parseInt(transaction.order_id.split('-')[2]) 
-        }
+      // 1. Marcar facturas como pagadas
+      const facturasActualizadas = await prisma.factura.updateMany({
+        where: { pagada: false, servicio: { clienteId: clienteId } },
+        data: { pagada: true }
       });
 
-      if (factura) {
-        // 3. Marcamos la factura como PAGADA
-        await prisma.factura.update({
-          where: { id: factura.id },
-          data: { pagada: true }
-        });
+      // 2. Reactivar servicios suspendidos
+      const serviciosActualizados = await prisma.servicio.updateMany({
+        where: { clienteId: clienteId, estado: 'SUSPENDIDO' },
+        data: { estado: 'ACTIVO' }
+      });
 
-        // 4. REACTIVACIÓN AUTOMÁTICA
-        // Buscamos el servicio y lo ponemos en ACTIVO
-        await prisma.servicio.update({
-          where: { id: factura.servicioId },
-          data: { estado: 'ACTIVO' }
-        });
-
-        console.log(`✅ Pago confirmado: Servicio ${factura.servicioId} reactivado.`);
-      }
-
-      res.sendStatus(200); // Dile a Openpay que recibiste el mensaje
+      console.log(`✅ [Webhook] Pago exitoso Cliente #${clienteId} | Facturas saldadas: ${facturasActualizadas.count}`);
     } catch (error) {
-      console.error("Error procesando webhook:", error);
-      res.sendStatus(500);
+      console.error("❌ [Webhook DB Error]:", error);
     }
-  } else {
-    res.sendStatus(200); // Otros eventos (fallidos, etc) solo los ignoramos
   }
+
+  // Siempre responder 200 OK a Openpay
+  res.sendStatus(200);
 });
 
 module.exports = router;

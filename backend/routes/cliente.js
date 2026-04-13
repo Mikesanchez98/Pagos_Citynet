@@ -46,45 +46,4 @@ router.get('/perfil', verificarToken, async (req, res) => {
   }
 });
 
-// El Webhook Corregido
-router.post('/webhook', async (req, res) => {
-  const evento = req.body;
-
-  if (evento.type === 'charge.confirmed') {
-    const ordenId = evento.transaction.order_id; 
-    const partesId = ordenId.split('-'); // ["ORD", "1689000000", "5"]
-    
-    // Extraemos el clienteId, NO el timestamp
-    const clienteId = parseInt(partesId[2]); 
-
-    if (!clienteId || isNaN(clienteId)) {
-      console.error("❌ Webhook fallido: No se pudo extraer el ID del cliente de la orden:", ordenId);
-      return res.sendStatus(200); 
-    }
-
-    try {
-      // 1. Marcar TODAS las facturas pendientes de este cliente como pagadas
-      const facturasActualizadas = await prisma.factura.updateMany({
-        where: { 
-          pagada: false,
-          servicio: { clienteId: clienteId } 
-        },
-        data: { pagada: true }
-      });
-
-      // 2. Reactivar TODOS los servicios suspendidos del cliente
-      const serviciosActualizados = await prisma.servicio.updateMany({
-        where: { clienteId: clienteId, estado: 'SUSPENDIDO' },
-        data: { estado: 'ACTIVO' }
-      });
-
-      console.log(`✅ Pago procesado para Cliente #${clienteId}. Facturas saldadas: ${facturasActualizadas.count}. Servicios reactivados: ${serviciosActualizados.count}`);
-    } catch (error) {
-      console.error("❌ Error DB al actualizar tras pago:", error);
-    }
-  }
-
-  res.sendStatus(200);
-});
-
 module.exports = router;

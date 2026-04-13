@@ -140,6 +140,19 @@ const AdminPanel = () => {
     }
   };
 
+  // --- FUNCIÓN PARA GENERAR COBROS MANUALES ---
+  const generarFactura = async (servicioId, precio) => {
+    if(!window.confirm("¿Generar factura para este servicio?")) return;
+    try {
+      const token = localStorage.getItem('token');
+      await axios.post(`http://localhost:3001/api/admin/servicio/${servicioId}/generar-factura`, 
+        { servicioId, monto: precio }, 
+        {headers: { Authorization: `Bearer ${token}` }
+      });
+      obtenerClientes();
+    } catch (err) { alert("Error al generar factura"); }
+  }
+
   const toggleEstatus = async (servicioId, estadoActual) => {
     const nuevoEstado = estadoActual === 'ACTIVO' ? 'SUSPENDIDO' : 'ACTIVO';
     try {
@@ -222,18 +235,31 @@ const AdminPanel = () => {
                     </td>
                     
                     <td className="p-6">
-                      <div className="flex flex-wrap gap-2">
-                        {c.servicios?.[0]?.facturas?.filter(f => !f.pagada).map(f => (
-                          <div key={f.id} className="flex items-center gap-2 bg-slate-50 border border-slate-200 pl-3 pr-1 py-1 rounded-xl">
-                            <span className="text-[10px] font-black text-slate-700">${f.monto}</span>
-                            <div className="flex gap-1">
-                              <button onClick={() => marcarComoPagada(f.id)} className="bg-green-500 text-white p-1 rounded-lg text-[8px] font-black uppercase px-2">Pagado</button>
-                              <button onClick={() => eliminarFactura(f.id)} className="bg-white text-red-500 border border-red-100 p-1 rounded-lg text-[8px] font-black uppercase px-2">X</button>
+                      {/* Envolvimos todo en un flex-col para que el botón quede debajo de las facturas */}
+                      <div className="flex flex-col items-start gap-2">
+                        <div className="flex flex-wrap gap-2">
+                          {c.servicios?.[0]?.facturas?.filter(f => !f.pagada).map(f => (
+                            <div key={f.id} className="flex items-center gap-2 bg-slate-50 border border-slate-200 pl-3 pr-1 py-1 rounded-xl">
+                              <span className="text-[10px] font-black text-slate-700">${f.monto}</span>
+                              <div className="flex gap-1">
+                                <button onClick={() => marcarComoPagada(f.id)} className="bg-green-500 text-white p-1 rounded-lg text-[8px] font-black uppercase px-2">Pagado</button>
+                                <button onClick={() => eliminarFactura(f.id)} className="bg-white text-red-500 border border-red-100 p-1 rounded-lg text-[8px] font-black uppercase px-2">X</button>
+                              </div>
                             </div>
-                          </div>
-                        ))}
-                        {(!c.servicios?.[0]?.facturas || c.servicios[0].facturas.filter(f => !f.pagada).length === 0) && (
-                          <span className="text-[10px] font-black text-green-400 bg-green-50 px-3 py-1 rounded-full uppercase">Al día ✅</span>
+                          ))}
+                          {(!c.servicios?.[0]?.facturas || c.servicios[0].facturas.filter(f => !f.pagada).length === 0) && (
+                            <span className="text-[10px] font-black text-green-400 bg-green-50 px-3 py-1 rounded-full uppercase">Al día ✅</span>
+                          )}
+                        </div>
+                        
+                        {/* AQUÍ ESTÁ EL BOTÓN DE GENERAR FACTURA VINCULADO AL SERVICIO */}
+                        {c.servicios?.[0] && (
+                          <button 
+                            onClick={() => generarFactura(c.servicios[0].id, c.servicios[0].precio)} 
+                            className="mt-1 text-[10px] font-black text-slate-500 hover:text-blue-600 border border-slate-200 hover:border-blue-200 bg-white hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-all flex items-center gap-1 uppercase"
+                          >
+                            <span>+ Generar Cobro</span>
+                          </button>
                         )}
                       </div>
                     </td>
