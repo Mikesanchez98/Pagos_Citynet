@@ -2,7 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const { PrismaClient } = require('@prisma/client');
-const verificarToken = require('../middleware/auth');
+const { verificarToken } = require('../middleware/auth');
 
 const prisma = new PrismaClient();
 
@@ -144,36 +144,44 @@ router.post('/generar-facturas-mes', verificarToken, async (req, res) => {
   }
 });
 
-// En tu archivo de rutas de administrador (backend)
-router.post('/servicio/:servicioId/generar-factura', verificarToken, async (req, res) => {
-  try {
-    const { servicioId } = req.params;
-    const { monto } = req.body;
+// POST /api/admin/servicio/:id/generar-factura
+router.post('/servicio/:id/generar-factura', async (req, res) => {
+  const servicioId = parseInt(req.params.id);
 
-    // Validación básica de datos
-    if (!servicioId || !monto) {
-      return res.status(400).json({ error: "Faltan datos obligatorios (servicioId o monto)" });
+  if (isNaN(servicioId)) {
+    return res.status(400).json({ error: 'ID de servicio inválido' });
+  }
+
+  try {
+    // 1. Buscar el servicio para saber cuánto cobrar
+    const servicio = await prisma.servicio.findUnique({
+      where: { id: servicioId }
+    });
+
+    if (!servicio) {
+      return res.status(404).json({ error: 'Servicio no encontrado' });
     }
 
-    // Crear la factura vinculada al servicio
+    // 2. Calcular la fecha de vencimiento (por ejemplo, 30 días a partir de hoy)
+    const fechaVencimiento = new Date();
+    fechaVencimiento.setDate(fechaVencimiento.getDate() + 30);
+
+    // 3. Crear la nueva factura en la base de datos
     const nuevaFactura = await prisma.factura.create({
       data: {
-        monto: parseFloat(monto),
-        pagada: false,
-        fechaVencimiento: new Date(), // Puedes sumarle 5 días si prefieres
-        servicio: {
-          connect: { id: parseInt(servicioId) }
-        }
+        monto: servicio.precio,
+        vencimiento: fechaVencimiento,
+        pagada: false, // Nace como deuda pendiente
+        servicioId: servicio.id
       }
     });
 
-    res.status(201).json({
-      mensaje: "Factura generada exitosamente",
-      factura: nuevaFactura
-    });
+    console.log(`✅ [Admin] Factura manual generada para el servicio #${servicio.id}`);
+    res.status(200).json({ msg: 'Factura generada exitosamente', factura: nuevaFactura });
+
   } catch (error) {
-    console.error("Error al generar factura manual:", error);
-    res.status(500).json({ error: "Error interno al procesar la factura" });
+    console.error('❌ [Admin Error] Error al generar factura manual:', error);
+    res.status(500).json({ error: 'Error interno del servidor al generar la factura' });
   }
 });
 

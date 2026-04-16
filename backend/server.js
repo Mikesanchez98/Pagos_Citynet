@@ -9,6 +9,7 @@ const clienteRoutes = require('./routes/cliente');
 const adminRoutes = require('./routes/admin');
 require('./services/automatizacion'); // Importamos el servicio de automatización (cron job)
 const webhook = require('./routes/webhook'); // Importamos la ruta del webhook de Openpay
+const rutasPagos = require('./routes/pagos'); // Importamos la ruta de pagos
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -22,6 +23,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/cliente', clienteRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/webhook', webhook);
+app.use('/api/pagos', rutasPagos); // Usamos la ruta de pagos
 
 app.listen(PORT, () => {
   console.log(`🚀 Servidor de Citynet en: http://localhost:${PORT}`);

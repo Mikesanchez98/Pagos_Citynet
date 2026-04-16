@@ -47,17 +47,29 @@ const Dashboard = () => {
   // --- NUEVA FUNCIÓN PARA OPENPAY ---
   const handlePagar = async () => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await axios.post('http://localhost:3001/api/pagos/crear-checkout', {}, {
-        headers: { Authorization: `Bearer ${token}` }
+      // 1. Buscamos el token en el almacenamiento del navegador
+      // NOTA: Si en tu login lo guardaste con otro nombre, cámbialo aquí.
+      const token = localStorage.getItem('token'); 
+
+      // 2. Si por alguna razón no hay token, detenemos la función
+      if (!token) {
+        alert('No se encontró tu sesión. Por favor, vuelve a iniciar sesión.');
+        return;
+      }
+
+      // 3. Ahora sí, hacemos la petición enviando el token real
+      const respuesta = await axios.post('http://localhost:3001/api/pagos/crear-checkout', {}, {
+        headers: { Authorization: `Bearer ${token}` } 
       });
 
-      if (response.data.url) {
-        window.location.href = response.data.url;
+      // 4. Redirigimos a la pasarela de Openpay
+      if (respuesta.data && respuesta.data.url) {
+        window.location.href = respuesta.data.url;
       }
+
     } catch (error) {
-      console.error("Error al generar pago:", error);
-      alert("No se pudo generar el enlace de pago. Verifica que tengas facturas pendientes.");
+      console.error('Error al generar pago:', error);
+      alert('Hubo un error al generar tu enlace de pago.');
     }
   };
   // ----------------------------------

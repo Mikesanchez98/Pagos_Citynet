@@ -255,7 +255,7 @@ const AdminPanel = () => {
                         {/* AQUÍ ESTÁ EL BOTÓN DE GENERAR FACTURA VINCULADO AL SERVICIO */}
                         {c.servicios?.[0] && (
                           <button 
-                            onClick={() => generarFactura(c.servicios[0].id, c.servicios[0].precio)} 
+                            onClick={() => generarFactura(c.servicios?.[0]?.id, c.servicios?.[0]?.precio)} 
                             className="mt-1 text-[10px] font-black text-slate-500 hover:text-blue-600 border border-slate-200 hover:border-blue-200 bg-white hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-all flex items-center gap-1 uppercase"
                           >
                             <span>+ Generar Cobro</span>

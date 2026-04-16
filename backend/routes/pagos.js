@@ -1,5 +1,10 @@
 // backend/routes/pagos.js
+const express = require('express');
+const router = express.Router();
 const axios = require('axios');
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
+const { verificarToken } = require('../middleware/auth');
 
 // Configuración manual (Sin librerías obsoletas)
 const MERCHANT_ID = process.env.OPENPAY_MERCHANT_ID;
@@ -47,25 +52,30 @@ router.post('/crear-checkout', verificarToken, async (req, res) => {
       return res.status(400).json({ error: "El monto a pagar no es válido." });
     }
 
+    // Formateamos el objeto EXACTAMENTE como lo pide la API de Openpay Checkouts
     const checkoutData = {
-      method: 'card',
-      amount: montoTotal.toFixed(2), 
+      amount: Number(montoTotal.toFixed(2)), // Lo obligamos a ser Number
       description: `Pago Acumulado Internet Citynet - ${cliente.nombre}`,
-      // El índice 2 del split será el cliente.id, clave para el webhook
-      order_id: `ORD-${Date.now()}-${cliente.id}`, 
+      order_id: `ORD-${Date.now()}-${cliente.id}`,
+      currency: "MXN", 
       customer: {
-        name: cliente.nombre,
-        email: cliente.usuario.email
+        name: cliente.nombre || "Cliente",
+        last_name: "Citynet", // Dato de relleno sugerido para evitar rechazos en Sandbox
+        email: cliente.usuario.email,
+        phone_number: "5555555555" // Dato de relleno sugerido
       },
       send_email: true,
-      confirm_url: 'http://localhost:3000/dashboard?pago=exitoso',
-      cancel_url: 'http://localhost:3000/dashboard?pago=cancelado'
+      // Openpay usa una sola URL para redirigir de vuelta a tu sistema
+      redirect_url: 'http://localhost:3000/dashboard' 
     };
 
-    // Lógica de Axios a Openpay aquí...
+    const respuestaOpenpay = await openpayAPI.post('/checkouts', checkoutData);
+    res.status(200).json({ url: respuestaOpenpay.data.checkout_link });
 
   } catch (error) {
     console.error("[Error Checkout]:", error.response?.data || error.message);
     res.status(500).json({ error: "Error interno en la pasarela" });
   }
 });
+
+module.exports = router;
