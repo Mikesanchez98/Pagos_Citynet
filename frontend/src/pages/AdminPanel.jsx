@@ -16,10 +16,11 @@ const AdminPanel = () => {
     email: '',
     password: '',
     nombre: '',
-    numCliente: '',
+    numCliente: 'CT-',
     plan: 'Fibra 20 Mbps',
     precio: 550,
-    ip: ''
+    ip: '',
+    diaCobro: 1 // NUEVO: Grupo de cobro por defecto
   });
 
   const PLANES_DISPONIBLES = {
@@ -48,7 +49,6 @@ const AdminPanel = () => {
       const res = await axios.get('http://localhost:3001/api/admin/clientes', {
         headers: { Authorization: `Bearer ${token}` }
       });
-      // Aseguramos que recibimos un array
       setClientes(Array.isArray(res.data) ? res.data : []);
     } catch (err) {
       console.error("Error al obtener clientes:", err);
@@ -58,7 +58,7 @@ const AdminPanel = () => {
     }
   };
 
-  // --- GESTIÓN DE FACTURAS ---
+  // --- GESTIÓN DE FACTURAS Y COBROS ---
   const marcarComoPagada = async (id) => {
     if (!window.confirm("¿Marcar esta factura como pagada?")) return;
     try {
@@ -81,6 +81,33 @@ const AdminPanel = () => {
     } catch (err) { alert("Error al eliminar factura"); }
   };
 
+  const generarFactura = async (servicioId, precio) => {
+    if(!window.confirm("¿Generar factura para este servicio?")) return;
+    try {
+      const token = localStorage.getItem('token');
+      await axios.post(`http://localhost:3001/api/admin/servicio/${servicioId}/generar-factura`, 
+        { servicioId, monto: precio }, 
+        {headers: { Authorization: `Bearer ${token}` }
+      });
+      obtenerClientes();
+    } catch (err) { alert("Error al generar factura"); }
+  };
+
+  // NUEVO: Generar facturas por grupo
+  const generarFacturasLote = async (dia) => {
+    if (!window.confirm(`¿Generar facturas masivas para todos los clientes del grupo ${dia}?`)) return;
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.post(`http://localhost:3001/api/admin/facturas/generar-lote`,
+        { diaCobro: dia },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      alert(res.data.mensaje);
+      obtenerClientes();
+    } catch (err) { alert("Error al generar facturas masivas"); }
+  };
+
+  // --- GESTIÓN DE CLIENTES ---
   const handleGuardar = async (e) => {
     e.preventDefault();
     const token = localStorage.getItem('token');
@@ -101,36 +128,31 @@ const AdminPanel = () => {
 
   const cancelarEdicion = () => {
     setEditandoId(null);
-    setForm({ email: '', password: '', nombre: '', numCliente: '', plan: 'Fibra 20 Mbps', precio: 550, ip: '' });
+    setForm({ email: '', password: '', nombre: '', numCliente: 'CT-', plan: 'Fibra 20 Mbps', precio: 550, ip: '', diaCobro: 1 });
   };
 
-  // --- FUNCIÓN REFACCIONADA PARA OBTENER DATOS FRESCOS ---
   const prepararEdicion = async (clienteParaEditar) => {
-    // 1. Ponemos el ID en el estado y scrolleamos arriba
     setEditandoId(clienteParaEditar.id);
     window.scrollTo({ top: 0, behavior: 'smooth' });
 
     try {
-      // 2. Traemos la información fresca y profunda desde el backend
       const token = localStorage.getItem('token');
       const res = await axios.get(`http://localhost:3001/api/admin/cliente/${clienteParaEditar.id}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       
       const clienteFresco = res.data;
-      const servicioActual = clienteFresco.servicios && clienteFresco.servicios.length > 0 
-        ? clienteFresco.servicios[0] 
-        : {};
+      const servicioActual = clienteFresco.servicios && clienteFresco.servicios.length > 0 ? clienteFresco.servicios[0] : {};
 
-      // 3. Poblamos el formulario
       setForm({
         nombre: clienteFresco.nombre || '',
-        numCliente: clienteFresco.numCliente || '',
+        numCliente: clienteFresco.numCliente || 'CT-',
         email: clienteFresco.usuario?.email || '', 
         plan: servicioActual.plan || 'Fibra 20 Mbps',
         precio: servicioActual.precio || 550,
         ip: servicioActual.direccionIp || '', 
-        password: '****' // No sobreescribir la contraseña
+        diaCobro: clienteFresco.diaCobro || 1, // Cargamos su grupo actual
+        password: '****' 
       });
 
     } catch (error) {
@@ -140,18 +162,17 @@ const AdminPanel = () => {
     }
   };
 
-  // --- FUNCIÓN PARA GENERAR COBROS MANUALES ---
-  const generarFactura = async (servicioId, precio) => {
-    if(!window.confirm("¿Generar factura para este servicio?")) return;
+  // NUEVO: Eliminar Cliente
+  const eliminarCliente = async (id) => {
+    if (!window.confirm("¡PELIGRO! ¿Estás seguro de que deseas eliminar este cliente y TODO su historial de facturas? Esta acción no se puede deshacer.")) return;
     try {
       const token = localStorage.getItem('token');
-      await axios.post(`http://localhost:3001/api/admin/servicio/${servicioId}/generar-factura`, 
-        { servicioId, monto: precio }, 
-        {headers: { Authorization: `Bearer ${token}` }
+      await axios.delete(`http://localhost:3001/api/admin/clientes/${id}`, {
+        headers: { Authorization: `Bearer ${token}` }
       });
       obtenerClientes();
-    } catch (err) { alert("Error al generar factura"); }
-  }
+    } catch (err) { alert("Error al eliminar cliente"); }
+  };
 
   const toggleEstatus = async (servicioId, estadoActual) => {
     const nuevoEstado = estadoActual === 'ACTIVO' ? 'SUSPENDIDO' : 'ACTIVO';
@@ -199,6 +220,14 @@ const AdminPanel = () => {
                 <input required type="text" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-mono font-bold text-blue-600" placeholder="IP Antena" value={form.ip} onChange={e => setForm({...form, ip: e.target.value})} />
               </div>
 
+              {/* NUEVO: Selector de Grupo de Cobro */}
+              <div className="grid grid-cols-1 gap-4">
+                 <select className="w-full p-4 bg-blue-50 border border-blue-100 rounded-2xl text-[11px] font-black text-blue-800" value={form.diaCobro} onChange={e => setForm({...form, diaCobro: parseInt(e.target.value)})}>
+                  <option value={1}>Grupo 1 (Cobro día 1 del mes)</option>
+                  <option value={15}>Grupo 15 (Cobro día 15 del mes)</option>
+                </select>
+              </div>
+
               <input required disabled={editandoId} type="email" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold disabled:opacity-40" placeholder="Correo Electrónico" value={form.email} onChange={e => setForm({...form, email: e.target.value})} />
               
               {!editandoId && <input required type="text" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold" placeholder="Contraseña Temporal" value={form.password} onChange={e => setForm({...form, password: e.target.value})} />}
@@ -206,13 +235,23 @@ const AdminPanel = () => {
               <button type="submit" className="w-full bg-slate-900 text-white py-5 rounded-3xl font-black text-sm tracking-widest hover:bg-blue-600 transition-all shadow-lg shadow-slate-200 uppercase">
                 {editandoId ? 'Guardar Cambios' : 'Registrar Cliente'}
               </button>
-              {editandoId && <button onClick={cancelarEdicion} className="w-full text-slate-400 font-bold text-xs uppercase tracking-widest mt-2">Cancelar</button>}
+              {editandoId && <button type="button" onClick={cancelarEdicion} className="w-full text-slate-400 font-bold text-xs uppercase tracking-widest mt-2">Cancelar</button>}
             </form>
           </div>
         </div>
 
-        {/* COLUMNA DERECHA: TABLA */}
+        {/* COLUMNA DERECHA: TABLA Y BOTONES MASIVOS */}
         <div className="lg:col-span-8">
+          
+          {/* NUEVO: Botones de Facturación Masiva */}
+          <div className="flex flex-col md:flex-row justify-between items-center bg-white p-4 rounded-[2rem] shadow-sm border border-slate-100 mb-6 px-6">
+            <h3 className="font-black text-slate-800 text-sm tracking-widest uppercase mb-4 md:mb-0">Facturación Masiva</h3>
+            <div className="flex gap-2">
+                <button onClick={() => generarFacturasLote(1)} className="bg-slate-900 text-white px-5 py-3 rounded-xl text-[10px] font-black uppercase hover:bg-blue-600 transition-all shadow-md">Facturar Grupo 1</button>
+                <button onClick={() => generarFacturasLote(15)} className="bg-slate-900 text-white px-5 py-3 rounded-xl text-[10px] font-black uppercase hover:bg-blue-600 transition-all shadow-md">Facturar Grupo 15</button>
+            </div>
+          </div>
+
           <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden">
             <table className="w-full text-left">
               <thead className="bg-slate-50/50 border-b border-slate-100">
@@ -231,11 +270,12 @@ const AdminPanel = () => {
                         <span className="text-[10px] font-bold text-blue-500 uppercase">{c.numCliente}</span>
                         <span className="text-[10px] font-bold text-slate-300">|</span>
                         <span className="text-[10px] font-bold text-slate-500 uppercase">{c.servicios?.[0]?.plan}</span>
+                        <span className="text-[10px] font-bold text-slate-300">|</span>
+                        <span className={`text-[10px] font-black uppercase ${c.diaCobro === 15 ? 'text-purple-500' : 'text-orange-500'}`}>Gpo: {c.diaCobro || 1}</span>
                       </div>
                     </td>
                     
                     <td className="p-6">
-                      {/* Envolvimos todo en un flex-col para que el botón quede debajo de las facturas */}
                       <div className="flex flex-col items-start gap-2">
                         <div className="flex flex-wrap gap-2">
                           {c.servicios?.[0]?.facturas?.filter(f => !f.pagada).map(f => (
@@ -252,7 +292,6 @@ const AdminPanel = () => {
                           )}
                         </div>
                         
-                        {/* AQUÍ ESTÁ EL BOTÓN DE GENERAR FACTURA VINCULADO AL SERVICIO */}
                         {c.servicios?.[0] && (
                           <button 
                             onClick={() => generarFactura(c.servicios?.[0]?.id, c.servicios?.[0]?.precio)} 
@@ -265,10 +304,11 @@ const AdminPanel = () => {
                     </td>
 
                     <td className="p-6 text-right">
-                      <div className="flex justify-end gap-2">
+                      <div className="flex justify-end gap-2 items-center">
                         <button onClick={() => prepararEdicion(c)} className="bg-slate-100 p-3 rounded-2xl hover:bg-blue-50 transition-colors group">
                            <span className="text-[10px] font-black text-slate-400 group-hover:text-blue-500 uppercase">Editar</span>
                         </button>
+                        
                         <button 
                           onClick={() => toggleEstatus(c.servicios?.[0]?.id, c.servicios?.[0]?.estado)}
                           className={`px-4 py-2 rounded-2xl text-[10px] font-black uppercase transition-all ${
@@ -277,6 +317,11 @@ const AdminPanel = () => {
                             : 'bg-red-50 text-red-600 border border-red-100 hover:bg-green-50 hover:text-green-600'
                           }`}>
                           {c.servicios?.[0]?.estado}
+                        </button>
+
+                        {/* NUEVO: Botón Eliminar Cliente */}
+                        <button onClick={() => eliminarCliente(c.id)} className="bg-red-50 p-3 rounded-2xl hover:bg-red-500 transition-colors group border border-red-100">
+                           <span className="text-[10px] font-black text-red-400 group-hover:text-white uppercase">Borrar</span>
                         </button>
                       </div>
                     </td>

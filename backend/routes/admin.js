@@ -3,6 +3,7 @@ const express = require('express');
 const router = express.Router();
 const { PrismaClient } = require('@prisma/client');
 const { verificarToken } = require('../middleware/auth');
+const { verificarAdmin } = require('../middleware/auth');
 
 const prisma = new PrismaClient();
 
@@ -239,6 +240,76 @@ router.delete('/factura/:id', verificarToken, async (req, res) => {
     res.json({ mensaje: "Factura eliminada" });
   } catch (error) {
     res.status(500).json({ error: "No se pudo eliminar" });
+  }
+});
+
+//Eliminar cliente (y en cascada su usuario, servicios y facturas)
+router.delete('/cliente/:id', verificarToken, verificarAdmin, async (req, res) => {
+  const clienteId = parseInt(req.params.id);
+
+  try{
+    //Usamos una transacción para borrar el orden (primero facturas, luego servicios, luego cliente y usuario)
+    await prisma.$transaction(async (tx) => {
+      //1. Borrar facturas de los servicios de este cliente
+      await tx.factura.deleteMany({
+        where: {servicio: { clienteId: clienteId } }
+      });
+      //2. Borrar los servicios
+      await tx.servicio.deleteMany({
+        where: { clienteId: clienteId }
+      });
+      //3. Finalmente, borrar el cliente (y por cascada su usuario)
+      await tx.cliente.delete({
+        where: { id: clienteId}
+      });
+    });
+
+    res.json({ mensaje: "Cliente y todo su historial eliminado correctamente" });
+  } catch (error) {
+    console.error("[Error al eliminar cliente]:", error);
+    res.status(500).json({ error: "Error interno al intentar eliminar el cliente" });
+  }
+});
+
+router.post('facturas/generar-lote', verificarToken, verificarAdmin, async (req, res) => {
+  const { diaCobro } = req.body; // Esperamos un 1 o un 15
+
+  if (diaCobro !== 1 && diaCobro !== 15) {
+    return res.status(400).json({ error: "El dia de cobro debe ser 1 o 15" });
+  }
+
+  try {
+    //Buscamos todos los clientes que pertenezcan a este grupo y que tengan servicios activos
+    const clientesDelGrupo = await prisma.cliente.findMany({
+      where: { diaCobro: parseInt(diaCobro) },
+      include: { servicios: true }
+    });
+
+    let facturasGeneradas = 0;
+
+    //Recorremos cada cliente y cada un de sus servicios para generar la factura correspondiente
+    for (const cliente of clientesDelGrupo) {
+      for (const servicio of cliente.servicios) {
+        await prisma.factura.create({
+          data: {
+            servicioId: servicio.id,
+            monto: servicio.precio,
+            fechaEmision: new Date(),
+            fechaVencimiento: new Date(new Date().setDate(setImmediate.Date() + 5)),
+            pagada: false
+          }
+        });
+        facturasGeneradas++;
+      }
+    }
+
+    res.json({
+      mensaje: `Proceso completado. Se generaron ${facturasGeneradas} facturas para el grupo del dia ${diaCobro}.`
+    });
+
+  } catch (error) {
+    console.error("[Error al generar facturas por lote]:", error);
+    res.status(500).json({ error: "Error interno al generar facturas por lote" });
   }
 });
 

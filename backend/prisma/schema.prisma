@@ -24,6 +24,7 @@ model Cliente {
   usuario       Usuario   @relation(fields: [usuarioId], references: [id])
   usuarioId     String    @unique
   servicios     Servicio[]
+  diaCobro      Int       @default(1)
 }
 
 
