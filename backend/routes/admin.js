@@ -7,7 +7,7 @@ const { verificarAdmin } = require('../middleware/auth');
 
 const prisma = new PrismaClient();
 
-// Middleware sencillo para checar si es ADMIN (puedes mejorarlo luego)
+// Middleware sencillo para checar si es ADMIN (se puede mejorar luego)
 const esAdmin = (req, res, next) => {
   // Aquí podrías consultar la DB, por ahora confiamos en el token decodificado
   next(); 
@@ -114,7 +114,7 @@ router.post('/registrar-cliente', verificarToken, esAdmin, async (req, res) => {
   }
 });
 
-// --- ACTUALIZACIÓN: GENERAR FACTURAS INTELIGENTES ---
+// --- ACTUALIZACIÓN: GENERAR FACTURAS INTELIGENTES ---  ACTUALMENTE ESTA RUTA NO SE USA, PERO SE QUEDA DE MANERA PROVISIONAL.
 router.post('/generar-facturas-mes', verificarToken, async (req, res) => {
   try {
     const servicios = await prisma.servicio.findMany({
@@ -189,7 +189,7 @@ router.post('/servicio/:id/generar-factura', async (req, res) => {
 // RUTA PARA ACTUALIZAR CLIENTE
 router.put('/cliente/:id', verificarToken, async (req, res) => {
   const { id } = req.params;
-  const { nombre, plan, precio, ip } = req.body;
+  const { nombre, plan, precio, ip, diaCobro } = req.body;
 
   try {
     // Usamos una actualización que incluya los datos del servicio vinculado
@@ -197,6 +197,7 @@ router.put('/cliente/:id', verificarToken, async (req, res) => {
       where: { id: parseInt(id) },
       data: {
         nombre: nombre,
+        diaCobro: parseInt(diaCobro),
         // Actualizamos el servicio asociado a este cliente
         servicios: {
           updateMany: {
@@ -244,7 +245,7 @@ router.delete('/factura/:id', verificarToken, async (req, res) => {
 });
 
 //Eliminar cliente (y en cascada su usuario, servicios y facturas)
-router.delete('/cliente/:id', verificarToken, verificarAdmin, async (req, res) => {
+router.delete('/clientes/:id', verificarToken, verificarAdmin, async (req, res) => {
   const clienteId = parseInt(req.params.id);
 
   try{
@@ -271,15 +272,15 @@ router.delete('/cliente/:id', verificarToken, verificarAdmin, async (req, res) =
   }
 });
 
-router.post('facturas/generar-lote', verificarToken, verificarAdmin, async (req, res) => {
-  const { diaCobro } = req.body; // Esperamos un 1 o un 15
+// Generar facturas masivas
+router.post('/facturas/generar-lote', verificarToken, verificarAdmin, async (req, res) => {
+  const { diaCobro } = req.body; 
 
   if (diaCobro !== 1 && diaCobro !== 15) {
     return res.status(400).json({ error: "El dia de cobro debe ser 1 o 15" });
   }
 
   try {
-    //Buscamos todos los clientes que pertenezcan a este grupo y que tengan servicios activos
     const clientesDelGrupo = await prisma.cliente.findMany({
       where: { diaCobro: parseInt(diaCobro) },
       include: { servicios: true }
@@ -287,15 +288,19 @@ router.post('facturas/generar-lote', verificarToken, verificarAdmin, async (req,
 
     let facturasGeneradas = 0;
 
-    //Recorremos cada cliente y cada un de sus servicios para generar la factura correspondiente
     for (const cliente of clientesDelGrupo) {
       for (const servicio of cliente.servicios) {
+        
+        // Calculamos los 5 días para el vencimiento
+        const fechaVencimiento = new Date();
+        fechaVencimiento.setDate(fechaVencimiento.getDate() + 5);
+
         await prisma.factura.create({
           data: {
             servicioId: servicio.id,
             monto: servicio.precio,
-            fechaEmision: new Date(),
-            fechaVencimiento: new Date(new Date().setDate(setImmediate.Date() + 5)),
+            // CORRECCIÓN AQUÍ: Usamos "vencimiento" tal como lo tienes en el resto de tu app
+            vencimiento: fechaVencimiento,
             pagada: false
           }
         });
@@ -308,7 +313,8 @@ router.post('facturas/generar-lote', verificarToken, verificarAdmin, async (req,
     });
 
   } catch (error) {
-    console.error("[Error al generar facturas por lote]:", error);
+    // Te agrego este console.log más específico para que si vuelve a fallar, la terminal de Node te diga EXACTAMENTE qué falló
+    console.error("❌ [Error Prisma en generar facturas por lote]:", error.message || error);
     res.status(500).json({ error: "Error interno al generar facturas por lote" });
   }
 });
