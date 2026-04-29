@@ -6,6 +6,8 @@ import PaymentOptions from './pages/PaymentOptions';
 import PaymentTicket from './pages/PaymentTicket';
 import CardPayment from './pages/CardPayment';
 import AdminPanel from './pages/AdminPanel';
+import TorresPanel from './pages/TorresPanel';
+import MapaPanel from './pages/MapaPanel';
 
 function App() {
   return (
@@ -17,6 +19,8 @@ function App() {
         <Route path="/pagar/ticket" element={<PaymentTicket />} />
         <Route path="/pagar/tarjeta" element={<CardPayment />} />
         <Route path="/admin" element={<AdminPanel />} />
+        <Route path="/admin/torres" element={<TorresPanel />} />
+        <Route path="/admin/mapa" element={<MapaPanel />} />
         <Route path="*" element={<Login />} />
       </Routes>
     </Router>

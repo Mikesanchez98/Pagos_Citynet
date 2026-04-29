@@ -25,8 +25,22 @@ model Cliente {
   usuarioId     String    @unique
   servicios     Servicio[]
   diaCobro      Int       @default(1)
+  direccion     String?
+  latitud       Float?
+  longitud      Float?
+
+  //Relacion con la torre
+  torreId       Int?
+  torre         Torre?    @relation(fields: [torreId], references: [id])
 }
 
+model Torre {
+  id            Int       @id @default(autoincrement())
+  nombre        String
+  latitud       Float?
+  longitud      Float?
+  clientes      Cliente[] //Relacion: Una torre alimenta a muchos clientes
+}
 
 model Servicio {
   id          Int      @id @default(autoincrement())

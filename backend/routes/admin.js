@@ -72,7 +72,7 @@ router.patch('/servicio/:id/estatus', verificarToken, async (req, res) => {
 
 // POST /api/admin/registrar-cliente
 router.post('/registrar-cliente', verificarToken, esAdmin, async (req, res) => {
-  const { email, password, nombre, numCliente, plan, precio, ip } = req.body;
+  const { email, password, nombre, numCliente, plan, precio, ip, torreId, direccion, latitud, longitud } = req.body;
 
   try {
     const resultado = await prisma.$transaction(async (tx) => {
@@ -90,7 +90,11 @@ router.post('/registrar-cliente', verificarToken, esAdmin, async (req, res) => {
         data: {
           nombre,
           numCliente,
-          usuarioId: usuario.id
+          usuarioId: usuario.id,
+          torreId: torreId ? parseInt(torreId) : null,
+          direccion: direccion || null,
+          latitud: latitud? parseFloat(latitud) : null,
+          longitud: longitud ? parseFloat(longitud) : null
         }
       });
 
@@ -189,7 +193,7 @@ router.post('/servicio/:id/generar-factura', async (req, res) => {
 // RUTA PARA ACTUALIZAR CLIENTE
 router.put('/cliente/:id', verificarToken, async (req, res) => {
   const { id } = req.params;
-  const { nombre, plan, precio, ip, diaCobro } = req.body;
+  const { nombre, plan, precio, ip, diaCobro, torreId, direccion, latitud, longitud } = req.body;
 
   try {
     // Usamos una actualización que incluya los datos del servicio vinculado
@@ -198,6 +202,10 @@ router.put('/cliente/:id', verificarToken, async (req, res) => {
       data: {
         nombre: nombre,
         diaCobro: parseInt(diaCobro),
+        torreId: torreId ? parseInt(torreId) : null,
+        direccion: direccion || null,
+        latitud: latitud ? parseFloat(latitud) : null,
+        longitud: longitud ? parseFloat(longitud) : null,
         // Actualizamos el servicio asociado a este cliente
         servicios: {
           updateMany: {
@@ -316,6 +324,56 @@ router.post('/facturas/generar-lote', verificarToken, verificarAdmin, async (req
     // Te agrego este console.log más específico para que si vuelve a fallar, la terminal de Node te diga EXACTAMENTE qué falló
     console.error("❌ [Error Prisma en generar facturas por lote]:", error.message || error);
     res.status(500).json({ error: "Error interno al generar facturas por lote" });
+  }
+});
+
+//OBTENER LAS TORRES
+router.get('/torres', verificarToken, async (req, res) => {
+  try {
+    //Traemos las torres e incluimos a los clientes conectados a cada una para futuras estadísticias
+    const torres = await prisma.torre.findMany({
+      include: { clientes: true }
+    });
+    res.json(torres);
+  } catch (error) {
+    console.error("Error al obtener torres:", error);
+    res.status(500).json({ error: "Error al obtener torres" });
+  }
+});
+
+//CREAR UNA NUEVA TORRE
+router.post('/torres', verificarToken, async (req, res) => {
+  const { nombre, latitud, longitud } = req.body;
+  try {
+    const nuevaTorre = await prisma.torre.create({
+      data: {
+        nombre,
+        latitud: parseFloat(latitud),
+        longitud: parseFloat(longitud)
+      }
+    });
+    res.json({ mensaje: "Torre creada exitosamente", torre: nuevaTorre });
+  } catch (error) {
+    console.error("Error al crear torre:", error);
+    res.status(500).json({ error: "Error al crear torre" });
+  }
+});
+
+router.put('/torres/:id', verificarToken, async (req, res) => {
+  const { id } = req.params;
+  const { nombre, latitud, longitud } = req.body;
+  try {
+    const torreActualizada = await prisma.torre.update({
+      where: { id: parseInt(id) },
+      data: {
+        nombre,
+        latitud: latitud ? parseFloat(latitud) : null,
+        longitud: longitud ? parseFloat(longitud) : null,
+      },
+    });
+    res.json(torreActualizada);
+  } catch (error) {
+    res.status(500).json({ error: "Error al actualizar torre" });
   }
 });
 

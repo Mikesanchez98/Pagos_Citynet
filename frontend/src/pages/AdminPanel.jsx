@@ -11,7 +11,9 @@ const AdminPanel = () => {
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState({ msg: '', type: '' });
   const [editandoId, setEditandoId] = useState(null);
+  const [torresDisponibles, setTorresDisponibles] = useState([]);
   
+  // CORRECCIÓN 1: Metimos los campos nuevos dentro de "form" para que se envíen al backend
   const [form, setForm] = useState({
     email: '',
     password: '',
@@ -20,7 +22,11 @@ const AdminPanel = () => {
     plan: 'Fibra 20 Mbps',
     precio: 550,
     ip: '',
-    diaCobro: 1 // NUEVO: Grupo de cobro por defecto
+    diaCobro: 1,
+    direccion: '',
+    latitud: '',
+    longitud: '',
+    torreId: ''
   });
 
   const PLANES_DISPONIBLES = {
@@ -39,6 +45,7 @@ const AdminPanel = () => {
         return;
       }
       obtenerClientes();
+      obtenerTorresParaSelect();
     };
     verificarAcceso();
   }, [navigate]);
@@ -55,6 +62,19 @@ const AdminPanel = () => {
       setStatus({ msg: 'Error al conectar con el servidor', type: 'error' });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const obtenerTorresParaSelect = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.get('http://localhost:3001/api/admin/torres', {
+        // CORRECCIÓN 2: Comillas invertidas para que lea el token correctamente
+        headers: { Authorization: `Bearer ${token}` } 
+      });
+      setTorresDisponibles(response.data);
+    } catch (error) {
+      console.error("Error al cargar torres para el formulario:", error);
     }
   };
 
@@ -93,7 +113,6 @@ const AdminPanel = () => {
     } catch (err) { alert("Error al generar factura"); }
   };
 
-  // NUEVO: Generar facturas por grupo
   const generarFacturasLote = async (dia) => {
     if (!window.confirm(`¿Generar facturas masivas para todos los clientes del grupo ${dia}?`)) return;
     try {
@@ -128,7 +147,10 @@ const AdminPanel = () => {
 
   const cancelarEdicion = () => {
     setEditandoId(null);
-    setForm({ email: '', password: '', nombre: '', numCliente: 'CT-', plan: 'Fibra 20 Mbps', precio: 550, ip: '', diaCobro: 1 });
+    setForm({ 
+      email: '', password: '', nombre: '', numCliente: 'CT-', plan: 'Fibra 20 Mbps', 
+      precio: 550, ip: '', diaCobro: 1, direccion: '', latitud: '', longitud: '', torreId: '' 
+    });
   };
 
   const prepararEdicion = async (clienteParaEditar) => {
@@ -144,6 +166,7 @@ const AdminPanel = () => {
       const clienteFresco = res.data;
       const servicioActual = clienteFresco.servicios && clienteFresco.servicios.length > 0 ? clienteFresco.servicios[0] : {};
 
+      // CORRECCIÓN 3: Cargamos los nuevos datos cuando queramos editar
       setForm({
         nombre: clienteFresco.nombre || '',
         numCliente: clienteFresco.numCliente || 'CT-',
@@ -151,8 +174,12 @@ const AdminPanel = () => {
         plan: servicioActual.plan || 'Fibra 20 Mbps',
         precio: servicioActual.precio || 550,
         ip: servicioActual.direccionIp || '', 
-        diaCobro: clienteFresco.diaCobro || 1, // Cargamos su grupo actual
-        password: '****' 
+        diaCobro: clienteFresco.diaCobro || 1, 
+        password: '****',
+        direccion: clienteFresco.direccion || '',
+        latitud: clienteFresco.latitud || '',
+        longitud: clienteFresco.longitud || '',
+        torreId: clienteFresco.torreId || ''
       });
 
     } catch (error) {
@@ -162,7 +189,6 @@ const AdminPanel = () => {
     }
   };
 
-  // NUEVO: Eliminar Cliente
   const eliminarCliente = async (id) => {
     if (!window.confirm("¡PELIGRO! ¿Estás seguro de que deseas eliminar este cliente y TODO su historial de facturas? Esta acción no se puede deshacer.")) return;
     try {
@@ -196,7 +222,25 @@ const AdminPanel = () => {
           <img src={logoCitynet} alt="Logo" className="h-10 brightness-0 invert" />
           <span className="text-[10px] font-black tracking-[0.3em] text-blue-400 border-l border-slate-700 pl-4 uppercase">Admin Panel</span>
         </div>
-        <button onClick={() => {localStorage.clear(); navigate('/login');}} className="text-[10px] font-black px-4 py-2 rounded-xl border border-red-500/30 text-red-500 hover:bg-red-500 hover:text-white transition-all">SALIR</button>
+        
+        {/* NUEVO: Contenedor para agrupar los botones */}
+        <div className="flex gap-4">
+          <button 
+            onClick={() => navigate('/admin/mapa')} 
+            className="text-[10px] font-black px-4 py-2 rounded-xl border border-green-500/30 text-green-500 hover:bg-green-500 hover:text-white transition-all uppercase">
+            Ver Mapa
+          </button>
+          <button 
+            onClick={() => navigate('/admin/torres')} 
+            className="text-[10px] font-black px-4 py-2 rounded-xl border border-blue-500/30 text-blue-400 hover:bg-blue-500 hover:text-white transition-all uppercase">
+            Gestionar Torres
+          </button>
+          <button 
+            onClick={() => {localStorage.clear(); navigate('/login');}} 
+            className="text-[10px] font-black px-4 py-2 rounded-xl border border-red-500/30 text-red-500 hover:bg-red-500 hover:text-white transition-all">
+            SALIR
+          </button>
+        </div>
       </nav>
 
       <div className="max-w-7xl mx-auto mt-8 px-4 grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -208,6 +252,49 @@ const AdminPanel = () => {
             <form onSubmit={handleGuardar} className="space-y-4">
               <input required type="text" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold" placeholder="Nombre del Cliente" value={form.nombre} onChange={e => setForm({...form, nombre: e.target.value})} />
               
+              {/* NUEVO: Dirección */}
+              <input 
+                type="text" 
+                className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold placeholder:text-slate-400" 
+                placeholder="Dirección (Ej: Calle 5 de Mayo #123)" 
+                value={form.direccion} 
+                onChange={e => setForm({...form, direccion: e.target.value})} 
+              />
+
+              {/* NUEVO: Selección de Torre */}
+              <select 
+                className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-[11px] font-black text-slate-700" 
+                value={form.torreId} 
+                onChange={e => setForm({...form, torreId: e.target.value})}
+              >
+                <option value="">-- Selecciona una Torre (Opcional) --</option>
+                {torresDisponibles.map((torre) => (
+                  <option key={torre.id} value={torre.id}>
+                    {torre.nombre}
+                  </option>
+                ))}
+              </select>
+
+              {/* NUEVO: Coordenadas en un Grid */}
+              <div className="grid grid-cols-2 gap-4">
+                <input 
+                  type="number" 
+                  step="any" 
+                  className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold placeholder:text-slate-400" 
+                  placeholder="Latitud" 
+                  value={form.latitud} 
+                  onChange={e => setForm({...form, latitud: e.target.value})} 
+                />
+                <input 
+                  type="number" 
+                  step="any" 
+                  className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold placeholder:text-slate-400" 
+                  placeholder="Longitud" 
+                  value={form.longitud} 
+                  onChange={e => setForm({...form, longitud: e.target.value})} 
+                />
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <select className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-[11px] font-black" value={form.plan} onChange={e => setForm({...form, plan: e.target.value, precio: PLANES_DISPONIBLES[e.target.value] || form.precio})}>
                   {Object.keys(PLANES_DISPONIBLES).map(p => <option key={p} value={p}>{p}</option>)}
@@ -220,7 +307,6 @@ const AdminPanel = () => {
                 <input required type="text" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-mono font-bold text-blue-600" placeholder="IP Antena" value={form.ip} onChange={e => setForm({...form, ip: e.target.value})} />
               </div>
 
-              {/* NUEVO: Selector de Grupo de Cobro */}
               <div className="grid grid-cols-1 gap-4">
                  <select className="w-full p-4 bg-blue-50 border border-blue-100 rounded-2xl text-[11px] font-black text-blue-800" value={form.diaCobro} onChange={e => setForm({...form, diaCobro: parseInt(e.target.value)})}>
                   <option value={1}>Grupo 1 (Cobro día 1 del mes)</option>
@@ -243,7 +329,6 @@ const AdminPanel = () => {
         {/* COLUMNA DERECHA: TABLA Y BOTONES MASIVOS */}
         <div className="lg:col-span-8">
           
-          {/* NUEVO: Botones de Facturación Masiva */}
           <div className="flex flex-col md:flex-row justify-between items-center bg-white p-4 rounded-[2rem] shadow-sm border border-slate-100 mb-6 px-6">
             <h3 className="font-black text-slate-800 text-sm tracking-widest uppercase mb-4 md:mb-0">Facturación Masiva</h3>
             <div className="flex gap-2">
@@ -319,7 +404,6 @@ const AdminPanel = () => {
                           {c.servicios?.[0]?.estado}
                         </button>
 
-                        {/* NUEVO: Botón Eliminar Cliente */}
                         <button onClick={() => eliminarCliente(c.id)} className="bg-red-50 p-3 rounded-2xl hover:bg-red-500 transition-colors group border border-red-100">
                            <span className="text-[10px] font-black text-red-400 group-hover:text-white uppercase">Borrar</span>
                         </button>
