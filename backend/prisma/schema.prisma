@@ -32,6 +32,8 @@ model Cliente {
   //Relacion con la torre
   torreId       Int?
   torre         Torre?    @relation(fields: [torreId], references: [id])
+
+  pagos         Pago[]
 }
 
 model Torre {
@@ -60,4 +62,16 @@ model Factura {
   pagada      Boolean  @default(false)
   servicio    Servicio @relation(fields: [servicioId], references: [id])
   servicioId  Int
+}
+
+model Pago {
+  id          Int      @id @default(autoincrement())
+  monto       Float
+  fecha       DateTime @default(now())
+  mesCorrespondiente  String 
+  metodoPago  String 
+  notas       String?
+
+  clienteId   Int
+  cliente     Cliente  @relation(fields: [clienteId], references: [id])
 }

@@ -4,6 +4,8 @@ const router = express.Router();
 const { PrismaClient } = require('@prisma/client');
 const { verificarToken } = require('../middleware/auth');
 const { verificarAdmin } = require('../middleware/auth');
+const { parse } = require('dotenv');
+const PDFDocument = require('pdfkit');
 
 const prisma = new PrismaClient();
 
@@ -374,6 +376,192 @@ router.put('/torres/:id', verificarToken, async (req, res) => {
     res.json(torreActualizada);
   } catch (error) {
     res.status(500).json({ error: "Error al actualizar torre" });
+  }
+});
+
+// -- RUTAS DE PAGOS--
+//Registrar Nuevo Pago
+router.post('/pagos', verificarToken, async (req, res) => {
+  const { clienteId, monto, mesCorrespondiente, metodoPago, notas } = req.body;
+  try {
+    const nuevoPago = await prisma.pago.create({
+      data: {
+        clienteId: parseInt(clienteId),
+        monto: parseFloat(monto),
+        mesCorrespondiente,
+        metodoPago,
+        notas: notas || null
+      }
+    });
+    res.json(nuevoPago);
+  } catch (error) {
+    console.error("Error al registrar pago:", error);
+    res.status(500).json({ error: "Error al registrar pago" });
+  }
+});
+
+//Obtener el historial de pagos de un cliente específico
+router.get('/pagos/:clienteId', verificarToken, async (req, res) => {
+  const { clienteId } = req.params;
+  try {
+    const historial = await prisma.pago.findMany({
+      where: { clienteId: parseInt(clienteId) },
+      orderBy: { fecha: 'desc' }
+    });
+    res.json(historial);
+  } catch (error) {
+    console.error("Error al obtener historial de pagos:", error);
+    res.status(500).json({ error: "Error al obtener historial de pagos" });
+  }
+});
+
+// --- RUTA DE ESTADÍSTICAS (Logistica) ---
+router.get('/dashboard-stats', verificarToken, async (req, res) => {
+  try {
+    const totalClientes = await prisma.cliente.count();
+    const servicios = await prisma.servicio.findMany();
+    
+    const activos = servicios.filter(s => s.estado === 'ACTIVO').length;
+    const suspendidos = servicios.filter(s => s.estado === 'SUSPENDIDO').length;
+
+    // CORRECCIÓN AQUÍ: Usamos Number() para asegurar que sea suma matemática
+    const ingresosProyectados = servicios
+      .filter(s => s.estado === 'ACTIVO')
+      .reduce((sum, s) => sum + Number(s.precio || 0), 0);
+
+    // CORRECCIÓN AQUÍ: También para los ingresos reales
+    const fechaInicioMes = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+    const pagosEsteMes = await prisma.pago.findMany({
+      where: { fecha: { gte: fechaInicioMes } }
+    });
+    
+    const ingresosReales = pagosEsteMes.reduce((sum, p) => sum + Number(p.monto || 0), 0);
+
+    res.json({
+      totalClientes,
+      activos,
+      suspendidos,
+      ingresosProyectados,
+      ingresosReales
+    });
+  } catch (error) {
+    console.error("Error obteniendo stats:", error);
+    res.status(500).json({ error: "Error al cargar estadísticas" });
+  }
+});
+
+//Generacion de pdf
+router.get('/pago/:id/pdf', verificarToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Buscamos el pago con los datos del cliente y el servicio
+    const pago = await prisma.pago.findUnique({
+      where: { id: parseInt(id) },
+      include: {
+        cliente: {
+          include: { servicios: true }
+        }
+      }
+    });
+
+    if (!pago) return res.status(404).json({ error: "Pago no encontrado" });
+
+    // Configuración del documento PDF
+    const doc = new PDFDocument({ size: 'A6', margin: 30 }); // Tamaño pequeño tipo ticket
+    
+    // Configurar el nombre del archivo al descargar
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=recibo_citynet_${pago.id}.pdf`);
+
+    doc.pipe(res);
+
+    // --- DISEÑO DEL RECIBO ---
+    
+    // Encabezado
+    doc.fillColor('#1e293b').fontSize(16).text('CITYNET', { align: 'center', weight: 'bold' });
+    doc.fontSize(8).text('Internet de Alta Velocidad', { align: 'center' });
+    doc.moveDown();
+    doc.moveTo(30, doc.y).lineTo(250, doc.y).stroke('#e2e8f0');
+    doc.moveDown();
+
+    // Información del Cliente
+    doc.fillColor('#64748b').fontSize(8).text('CLIENTE:');
+    doc.fillColor('#000000').fontSize(10).text(pago.cliente.nombre.toUpperCase());
+    doc.fontSize(8).text(`Dirección: ${pago.cliente.direccion || 'No especificada'}`);
+    doc.moveDown();
+
+    // Detalles del Pago
+    doc.rect(30, doc.y, 220, 60).fill('#f8fafc').stroke('#e2e8f0');
+    doc.fillColor('#1e293b');
+    
+    let yPos = doc.y + 10;
+    doc.fontSize(8).text('CONCEPTO', 40, yPos);
+    doc.text('MONTO', 200, yPos);
+    
+    yPos += 15;
+    doc.fontSize(10).fillColor('#000000').text('Pago de Servicio Mensual', 40, yPos);
+    doc.text(`$${pago.monto}`, 200, yPos);
+
+    yPos += 20;
+    doc.fontSize(8).fillColor('#64748b').text(`Fecha: ${new Date(pago.fecha).toLocaleDateString()}`, 40, yPos);
+    doc.text(`ID: #${pago.id}`, 200, yPos);
+
+    // Total
+    doc.moveDown(4);
+    doc.fontSize(12).fillColor('#10b981').text(`TOTAL PAGADO: $${pago.monto}`, { align: 'right' });
+
+    // Pie de página
+    doc.moveDown(2);
+    doc.fillColor('#94a3b8').fontSize(7).text('Gracias por su preferencia.', { align: 'center' });
+    doc.text('Citynet - Conectando tu mundo', { align: 'center' });
+
+    doc.end();
+
+  } catch (error) {
+    console.error("Error generando PDF:", error);
+    res.status(500).json({ error: "Error al generar el recibo" });
+  }
+});
+
+// Obtener detalle completo de un cliente
+router.get('/cliente/:id', verificarToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const cliente = await prisma.cliente.findUnique({
+      where: { id: parseInt(id) },
+      include: {
+        servicios: true,
+        pagos: {
+          orderBy: { fecha: 'desc' } // Los pagos más recientes primero
+        }
+      }
+    });
+
+    if (!cliente) return res.status(404).json({ error: "Cliente no encontrado" });
+    res.json(cliente);
+  } catch (error) {
+    res.status(500).json({ error: "Error al obtener detalles" });
+  }
+});
+
+// Registrar un pago desde el detalle del cliente
+router.post('/cliente/:id/pagar', verificarToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { monto } = req.body;
+
+    const nuevoPago = await prisma.pago.create({
+      data: {
+        monto: Number(monto),
+        fecha: new Date(), // Fecha actual
+        clienteId: parseInt(id)
+      }
+    });
+
+    res.json({ message: "Pago registrado con éxito", nuevoPago });
+  } catch (error) {
+    res.status(500).json({ error: "Error al registrar el pago" });
   }
 });
 

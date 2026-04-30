@@ -8,6 +8,8 @@ import CardPayment from './pages/CardPayment';
 import AdminPanel from './pages/AdminPanel';
 import TorresPanel from './pages/TorresPanel';
 import MapaPanel from './pages/MapaPanel';
+import Logistica from './pages/Logistica';
+import DetalleCliente from './pages/DetalleCliente';
 
 function App() {
   return (
@@ -21,6 +23,8 @@ function App() {
         <Route path="/admin" element={<AdminPanel />} />
         <Route path="/admin/torres" element={<TorresPanel />} />
         <Route path="/admin/mapa" element={<MapaPanel />} />
+        <Route path="/admin/logistica" element={<Logistica />} />
+        <Route path="/admin/cliente/:id" element={<DetalleCliente />} />
         <Route path="*" element={<Login />} />
       </Routes>
     </Router>

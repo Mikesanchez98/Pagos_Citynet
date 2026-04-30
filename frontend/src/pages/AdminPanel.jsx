@@ -13,7 +13,7 @@ const AdminPanel = () => {
   const [editandoId, setEditandoId] = useState(null);
   const [torresDisponibles, setTorresDisponibles] = useState([]);
   
-  // CORRECCIÓN 1: Metimos los campos nuevos dentro de "form" para que se envíen al backend
+  // FORMULARIO ORIGINAL
   const [form, setForm] = useState({
     email: '',
     password: '',
@@ -27,6 +27,13 @@ const AdminPanel = () => {
     latitud: '',
     longitud: '',
     torreId: ''
+  });
+
+  // --- NUEVOS ESTADOS PARA EL MODAL DE PAGO ---
+  const [showModalPago, setShowModalPago] = useState(false);
+  const [clienteActivo, setClienteActivo] = useState(null);
+  const [pagoData, setPagoData] = useState({
+    monto: '', mesCorrespondiente: 'Abril 2026', metodoPago: 'Efectivo', notas: ''
   });
 
   const PLANES_DISPONIBLES = {
@@ -69,7 +76,6 @@ const AdminPanel = () => {
     try {
       const token = localStorage.getItem('token');
       const response = await axios.get('http://localhost:3001/api/admin/torres', {
-        // CORRECCIÓN 2: Comillas invertidas para que lea el token correctamente
         headers: { Authorization: `Bearer ${token}` } 
       });
       setTorresDisponibles(response.data);
@@ -78,7 +84,38 @@ const AdminPanel = () => {
     }
   };
 
-  // --- GESTIÓN DE FACTURAS Y COBROS ---
+  // --- NUEVAS FUNCIONES DE PAGO DIRECTO ---
+  const abrirModalPago = (cliente) => {
+    setClienteActivo(cliente);
+    // Intentamos sacar el precio de su servicio, o lo dejamos en blanco
+    const precioSugerido = cliente.servicios?.[0]?.precio || '';
+    setPagoData({
+      monto: precioSugerido, 
+      mesCorrespondiente: 'Abril 2026',
+      metodoPago: 'Efectivo',
+      notas: ''
+    });
+    setShowModalPago(true);
+  };
+
+  const handleRegistrarPago = async (e) => {
+    e.preventDefault();
+    try {
+      const token = localStorage.getItem('token');
+      await axios.post('http://localhost:3001/api/admin/pagos', 
+        { clienteId: clienteActivo.id, ...pagoData },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      alert(`Pago de $${pagoData.monto} registrado con éxito para ${clienteActivo.nombre}`);
+      setShowModalPago(false);
+      setClienteActivo(null);
+    } catch (error) {
+      console.error("Error al registrar pago", error);
+      alert("Hubo un error al registrar el pago.");
+    }
+  };
+
+  // --- GESTIÓN DE FACTURAS Y COBROS (ORIGINAL) ---
   const marcarComoPagada = async (id) => {
     if (!window.confirm("¿Marcar esta factura como pagada?")) return;
     try {
@@ -126,7 +163,7 @@ const AdminPanel = () => {
     } catch (err) { alert("Error al generar facturas masivas"); }
   };
 
-  // --- GESTIÓN DE CLIENTES ---
+  // --- GESTIÓN DE CLIENTES (ORIGINAL) ---
   const handleGuardar = async (e) => {
     e.preventDefault();
     const token = localStorage.getItem('token');
@@ -166,7 +203,6 @@ const AdminPanel = () => {
       const clienteFresco = res.data;
       const servicioActual = clienteFresco.servicios && clienteFresco.servicios.length > 0 ? clienteFresco.servicios[0] : {};
 
-      // CORRECCIÓN 3: Cargamos los nuevos datos cuando queramos editar
       setForm({
         nombre: clienteFresco.nombre || '',
         numCliente: clienteFresco.numCliente || 'CT-',
@@ -214,7 +250,7 @@ const AdminPanel = () => {
   if (loading) return <div className="p-10 text-center font-bold text-slate-500 uppercase tracking-widest">Cargando Sistema...</div>;
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-20 font-sans">
+    <div className="min-h-screen bg-slate-50 pb-20 font-sans relative">
       
       {/* NAVBAR OSCURO */}
       <nav className="bg-slate-900 text-white p-4 shadow-xl flex justify-between items-center px-8">
@@ -223,23 +259,11 @@ const AdminPanel = () => {
           <span className="text-[10px] font-black tracking-[0.3em] text-blue-400 border-l border-slate-700 pl-4 uppercase">Admin Panel</span>
         </div>
         
-        {/* NUEVO: Contenedor para agrupar los botones */}
         <div className="flex gap-4">
-          <button 
-            onClick={() => navigate('/admin/mapa')} 
-            className="text-[10px] font-black px-4 py-2 rounded-xl border border-green-500/30 text-green-500 hover:bg-green-500 hover:text-white transition-all uppercase">
-            Ver Mapa
-          </button>
-          <button 
-            onClick={() => navigate('/admin/torres')} 
-            className="text-[10px] font-black px-4 py-2 rounded-xl border border-blue-500/30 text-blue-400 hover:bg-blue-500 hover:text-white transition-all uppercase">
-            Gestionar Torres
-          </button>
-          <button 
-            onClick={() => {localStorage.clear(); navigate('/login');}} 
-            className="text-[10px] font-black px-4 py-2 rounded-xl border border-red-500/30 text-red-500 hover:bg-red-500 hover:text-white transition-all">
-            SALIR
-          </button>
+          <button onClick={() => navigate('/admin/mapa')} className="text-[10px] font-black px-4 py-2 rounded-xl border border-green-500/30 text-green-500 hover:bg-green-500 hover:text-white transition-all uppercase">Ver Mapa</button>
+          <button onClick={() => navigate('/admin/torres')} className="text-[10px] font-black px-4 py-2 rounded-xl border border-blue-500/30 text-blue-400 hover:bg-blue-500 hover:text-white transition-all uppercase">Gestionar Torres</button>
+          <button onClick={() => navigate('/admin/logistica')} className="text-[10px] font-black px-4 py-2 rounded-xl border border-purple-500/30 text-purple-500 hover:bg-purple-500 hover:text-white transition-all uppercase">Gestionar Logística</button>
+          <button onClick={() => {localStorage.clear(); navigate('/login');}} className="text-[10px] font-black px-4 py-2 rounded-xl border border-red-500/30 text-red-500 hover:bg-red-500 hover:text-white transition-all">SALIR</button>
         </div>
       </nav>
 
@@ -252,47 +276,18 @@ const AdminPanel = () => {
             <form onSubmit={handleGuardar} className="space-y-4">
               <input required type="text" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold" placeholder="Nombre del Cliente" value={form.nombre} onChange={e => setForm({...form, nombre: e.target.value})} />
               
-              {/* NUEVO: Dirección */}
-              <input 
-                type="text" 
-                className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold placeholder:text-slate-400" 
-                placeholder="Dirección (Ej: Calle 5 de Mayo #123)" 
-                value={form.direccion} 
-                onChange={e => setForm({...form, direccion: e.target.value})} 
-              />
+              <input type="text" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold placeholder:text-slate-400" placeholder="Dirección (Ej: Calle 5 de Mayo #123)" value={form.direccion} onChange={e => setForm({...form, direccion: e.target.value})} />
 
-              {/* NUEVO: Selección de Torre */}
-              <select 
-                className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-[11px] font-black text-slate-700" 
-                value={form.torreId} 
-                onChange={e => setForm({...form, torreId: e.target.value})}
-              >
+              <select className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-[11px] font-black text-slate-700" value={form.torreId} onChange={e => setForm({...form, torreId: e.target.value})}>
                 <option value="">-- Selecciona una Torre (Opcional) --</option>
                 {torresDisponibles.map((torre) => (
-                  <option key={torre.id} value={torre.id}>
-                    {torre.nombre}
-                  </option>
+                  <option key={torre.id} value={torre.id}>{torre.nombre}</option>
                 ))}
               </select>
 
-              {/* NUEVO: Coordenadas en un Grid */}
               <div className="grid grid-cols-2 gap-4">
-                <input 
-                  type="number" 
-                  step="any" 
-                  className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold placeholder:text-slate-400" 
-                  placeholder="Latitud" 
-                  value={form.latitud} 
-                  onChange={e => setForm({...form, latitud: e.target.value})} 
-                />
-                <input 
-                  type="number" 
-                  step="any" 
-                  className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold placeholder:text-slate-400" 
-                  placeholder="Longitud" 
-                  value={form.longitud} 
-                  onChange={e => setForm({...form, longitud: e.target.value})} 
-                />
+                <input type="number" step="any" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold placeholder:text-slate-400" placeholder="Latitud" value={form.latitud} onChange={e => setForm({...form, latitud: e.target.value})} />
+                <input type="number" step="any" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold placeholder:text-slate-400" placeholder="Longitud" value={form.longitud} onChange={e => setForm({...form, longitud: e.target.value})} />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -389,11 +384,24 @@ const AdminPanel = () => {
                     </td>
 
                     <td className="p-6 text-right">
-                      <div className="flex justify-end gap-2 items-center">
+                      <div className="flex justify-end gap-2 items-center flex-wrap">
+                        
+                        {/* BOTÓN DE COBRAR */}
+                        <button onClick={() => abrirModalPago(c)} className="bg-green-50 p-3 rounded-2xl hover:bg-green-500 transition-colors group border border-green-100">
+                           <span className="text-[10px] font-black text-green-600 group-hover:text-white uppercase">💳 Cobrar</span>
+                        </button>
+
+                        {/* NUEVO BOTÓN DE EXPEDIENTE AÑADIDO AQUÍ */}
+                        <button onClick={() => navigate(`/admin/cliente/${c.id}`)} className="bg-blue-50 p-3 rounded-2xl hover:bg-blue-500 transition-colors group border border-blue-100">
+                           <span className="text-[10px] font-black text-blue-500 group-hover:text-white uppercase">👁️ Expediente</span>
+                        </button>
+
+                        {/* BOTÓN DE EDITAR */}
                         <button onClick={() => prepararEdicion(c)} className="bg-slate-100 p-3 rounded-2xl hover:bg-blue-50 transition-colors group">
                            <span className="text-[10px] font-black text-slate-400 group-hover:text-blue-500 uppercase">Editar</span>
                         </button>
                         
+                        {/* BOTÓN DE ESTATUS */}
                         <button 
                           onClick={() => toggleEstatus(c.servicios?.[0]?.id, c.servicios?.[0]?.estado)}
                           className={`px-4 py-2 rounded-2xl text-[10px] font-black uppercase transition-all ${
@@ -404,6 +412,7 @@ const AdminPanel = () => {
                           {c.servicios?.[0]?.estado}
                         </button>
 
+                        {/* BOTÓN DE BORRAR */}
                         <button onClick={() => eliminarCliente(c.id)} className="bg-red-50 p-3 rounded-2xl hover:bg-red-500 transition-colors group border border-red-100">
                            <span className="text-[10px] font-black text-red-400 group-hover:text-white uppercase">Borrar</span>
                         </button>
@@ -417,6 +426,51 @@ const AdminPanel = () => {
         </div>
 
       </div>
+
+      {/* --- NUEVO MODAL DE PAGO (OVERLAY FLOTANTE) --- */}
+      {showModalPago && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-md rounded-[2.5rem] p-8 shadow-2xl animate-in fade-in zoom-in duration-200">
+            <h3 className="text-xl font-black text-slate-800 mb-1">Registrar Pago</h3>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-6">
+              Cliente: <span className="text-blue-500">{clienteActivo?.nombre}</span>
+            </p>
+
+            <form onSubmit={handleRegistrarPago} className="space-y-4">
+              <div>
+                <label className="text-[10px] font-black text-slate-400 ml-4 mb-1 block uppercase">Monto a cobrar ($)</label>
+                <input required type="number" step="any" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-xl font-black text-slate-800" value={pagoData.monto} onChange={e => setPagoData({...pagoData, monto: e.target.value})} />
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-[10px] font-black text-slate-400 ml-4 mb-1 block uppercase">Mes a saldar</label>
+                  <input required type="text" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold" value={pagoData.mesCorrespondiente} onChange={e => setPagoData({...pagoData, mesCorrespondiente: e.target.value})} />
+                </div>
+                <div>
+                  <label className="text-[10px] font-black text-slate-400 ml-4 mb-1 block uppercase">Método</label>
+                  <select className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold text-slate-600" value={pagoData.metodoPago} onChange={e => setPagoData({...pagoData, metodoPago: e.target.value})}>
+                    <option value="Efectivo">Efectivo</option>
+                    <option value="Transferencia">Transferencia</option>
+                    <option value="Tarjeta">Tarjeta</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black text-slate-400 ml-4 mb-1 block uppercase">Notas (Opcional)</label>
+                <input type="text" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold" placeholder="Ej. Dejó $50 a cuenta" value={pagoData.notas} onChange={e => setPagoData({...pagoData, notas: e.target.value})} />
+              </div>
+
+              <div className="flex gap-4 mt-6">
+                <button type="button" onClick={() => setShowModalPago(false)} className="flex-1 p-4 rounded-2xl font-black text-xs uppercase tracking-widest text-slate-500 bg-slate-100 hover:bg-slate-200 transition-all">Cancelar</button>
+                <button type="submit" className="flex-1 p-4 rounded-2xl font-black text-xs uppercase tracking-widest text-white bg-green-500 hover:bg-green-600 shadow-lg shadow-green-200 transition-all">Confirmar Pago</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };
