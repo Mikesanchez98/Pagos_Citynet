@@ -81,7 +81,7 @@ router.patch('/servicio/:id/estatus', verificarToken, async (req, res) => {
 
 // POST /api/admin/registrar-cliente
 router.post('/registrar-cliente', verificarToken, esAdmin, async (req, res) => {
-  const { email, password, nombre, numCliente, plan, precio, ip, torreId, direccion, latitud, longitud } = req.body;
+  const { email, password, nombre, numCliente, plan, precio, ip, torreId, direccion, latitud, longitud, telefono } = req.body;
 
   try {
     const resultado = await prisma.$transaction(async (tx) => {
@@ -103,7 +103,8 @@ router.post('/registrar-cliente', verificarToken, esAdmin, async (req, res) => {
           torreId: torreId ? parseInt(torreId) : null,
           direccion: direccion || null,
           latitud: latitud? parseFloat(latitud) : null,
-          longitud: longitud ? parseFloat(longitud) : null
+          longitud: longitud ? parseFloat(longitud) : null,
+          telefono: telefono || null
         }
       });
 
@@ -202,7 +203,7 @@ router.post('/servicio/:id/generar-factura', async (req, res) => {
 // RUTA PARA ACTUALIZAR CLIENTE
 router.put('/cliente/:id', verificarToken, async (req, res) => {
   const { id } = req.params;
-  const { nombre, plan, precio, ip, diaCobro, torreId, direccion, latitud, longitud } = req.body;
+  const { nombre, plan, precio, ip, diaCobro, torreId, direccion, latitud, longitud, telefono } = req.body;
 
   try {
     // Usamos una actualización que incluya los datos del servicio vinculado
@@ -215,6 +216,7 @@ router.put('/cliente/:id', verificarToken, async (req, res) => {
         direccion: direccion || null,
         latitud: latitud ? parseFloat(latitud) : null,
         longitud: longitud ? parseFloat(longitud) : null,
+        telefono: telefono || null,
         // Actualizamos el servicio asociado a este cliente
         servicios: {
           updateMany: {

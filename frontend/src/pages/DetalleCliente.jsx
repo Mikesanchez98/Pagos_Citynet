@@ -1,3 +1,4 @@
+// src/pages/DetalleCliente.jsx
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
@@ -26,9 +27,6 @@ const DetalleCliente = () => {
         headers: { Authorization: `Bearer ${token}` }
       });
       
-      // 🕵️ LOG DE DEPURACIÓN PRINCIPAL
-      console.log("📥 DATOS CRUDOS DEL BACKEND:", res.data);
-      
       setCliente(res.data);
     } catch (error) {
       console.error("Error al cargar el expediente:", error);
@@ -40,7 +38,7 @@ const DetalleCliente = () => {
   // --- FUNCIONES DE FACTURACIÓN Y PAGOS ---
   const abrirModalPago = () => {
     const precioSugerido = cliente?.servicios?.[0]?.precio || '';
-    setPagoData({ monto: precioSugerido, mesCorrespondiente: '', metodoPago: 'Efectivo', notas: '' });
+    setPagoData({ monto: precioSugerido, mesCorrespondiente: 'Abril 2026', metodoPago: 'Efectivo', notas: '' });
     setShowModalPago(true);
   };
 
@@ -90,13 +88,49 @@ const DetalleCliente = () => {
     window.open(`http://localhost:3001/api/admin/factura/${facturaId}/pdf?token=${token}`, '_blank');
   };
 
-  if (loading) return <div className="p-20 text-center font-black text-slate-500 uppercase tracking-widest">Cargando Expediente...</div>;
-  if (!cliente) return <div className="p-20 text-center font-black text-red-500 uppercase tracking-widest">Cliente no encontrado</div>;
-
-  // EXTRACCIÓN SEGURA DE DATOS
+  // EXTRACCIÓN SEGURA DE DATOS PARA FUNCIONES DE WHATSAPP Y RENDERIZADO
   const servicioPrincipal = cliente?.servicios?.[0];
   const facturas = servicioPrincipal?.facturas || [];
   const pagos = cliente?.pagos || [];
+
+  // --- FUNCION PARA ABRIR WHATSAPP NORMAL ---
+  const abrirWhatsApp = () => {
+    if (!cliente?.telefono) return;
+    const numeroLimpio = cliente.telefono.replace(/\D/g, '');
+    const numeroFinal = numeroLimpio.length === 10 ? `52${numeroLimpio}` : numeroLimpio;
+    window.open(`https://wa.me/${numeroFinal}`, '_blank');
+  };
+
+  // --- NUEVA FUNCION PARA RECORDATORIO AUTOMÁTICO ---
+  const enviarRecordatorioPago = () => {
+    if (!cliente?.telefono) return alert("El cliente no tiene teléfono registrado.");
+
+    const facturasPendientes = facturas.filter(f => !f.pagada);
+    
+    if (facturasPendientes.length === 0) {
+      return alert("El cliente está al día. No hay facturas pendientes para cobrar.");
+    }
+
+    // Calcula el total sumando todas las facturas pendientes
+    const montoTotal = facturasPendientes.reduce((total, f) => total + Number(f.monto || 0), 0).toFixed(2);
+    
+    // Toma la fecha de vencimiento de la primera factura pendiente
+    const facturaMasAntigua = facturasPendientes[0];
+    const fechaValida = facturaMasAntigua?.vencimiento && !isNaN(new Date(facturaMasAntigua.vencimiento).getTime());
+    const fechaTexto = fechaValida ? new Date(facturaMasAntigua.vencimiento).toLocaleDateString() : 'tu fecha de corte';
+
+    // Construye el mensaje con emojis y formato Markdown para WhatsApp (*negritas*, _cursivas_)
+    const mensaje = `Hola *${cliente.nombre}*, te saludamos de *Citynet*. 🌐\n\nTe recordamos que presentas un saldo pendiente de *$${montoTotal}* correspondiente a tu servicio de internet. Tu fecha límite de pago es/fue el *${fechaTexto}*.\n\nPuedes realizar tu pago vía transferencia, OXXO o en nuestras oficinas.\n\n_Si ya realizaste tu pago, por favor omite este mensaje. ¡Muchas gracias por tu preferencia!_`;
+
+    const numeroLimpio = cliente.telefono.replace(/\D/g, '');
+    const numeroFinal = numeroLimpio.length === 10 ? `52${numeroLimpio}` : numeroLimpio;
+
+    // Codifica el mensaje para que funcione como parámetro en la URL
+    window.open(`https://wa.me/${numeroFinal}?text=${encodeURIComponent(mensaje)}`, '_blank');
+  };
+
+  if (loading) return <div className="p-20 text-center font-black text-slate-500 uppercase tracking-widest">Cargando Expediente...</div>;
+  if (!cliente) return <div className="p-20 text-center font-black text-red-500 uppercase tracking-widest">Cliente no encontrado</div>;
 
   return (
     <div className="min-h-screen bg-slate-50 pb-20 font-sans">
@@ -123,9 +157,34 @@ const DetalleCliente = () => {
               </span>
             </div>
             <p className="text-sm font-bold text-slate-500">📍 {cliente.direccion || 'Sin dirección registrada'}</p>
-            <div className="flex gap-4 mt-4">
-              <span className="bg-slate-50 text-slate-600 px-3 py-1 rounded-lg border border-slate-200 text-xs font-black uppercase">ID: {cliente.numCliente}</span>
-              <span className="bg-blue-50 text-blue-600 px-3 py-1 rounded-lg border border-blue-200 text-xs font-black uppercase">Grupo: {cliente.diaCobro}</span>
+            
+            <div className="flex gap-4 mt-4 flex-wrap items-center">
+              <span className="bg-slate-50 text-slate-600 px-3 py-1 rounded-lg border border-slate-200 text-xs font-black uppercase flex items-center h-8">
+                ID: {cliente.numCliente}
+              </span>
+              <span className="bg-blue-50 text-blue-600 px-3 py-1 rounded-lg border border-blue-200 text-xs font-black uppercase flex items-center h-8">
+                Grupo: {cliente.diaCobro}
+              </span>
+              
+              {/* BOTONES DE WHATSAPP INTEGRADOS AQUÍ */}
+              {cliente.telefono && (
+                <div className="flex gap-2">
+                  <button 
+                    onClick={abrirWhatsApp}
+                    title="Abrir chat de WhatsApp"
+                    className="bg-green-50 text-green-600 hover:bg-green-500 hover:text-white px-4 rounded-lg border border-green-200 text-xs font-black uppercase flex items-center gap-2 transition-all h-8"
+                  >
+                    <span className="text-sm">💬</span> Chat
+                  </button>
+                  <button 
+                    onClick={enviarRecordatorioPago}
+                    title="Enviar recordatorio de saldo pendiente"
+                    className="bg-orange-50 text-orange-600 hover:bg-orange-500 hover:text-white px-4 rounded-lg border border-orange-200 text-xs font-black uppercase flex items-center gap-2 transition-all h-8"
+                  >
+                    <span className="text-sm">🔔</span> Cobrar
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
@@ -171,11 +230,9 @@ const DetalleCliente = () => {
               {facturas.length > 0 ? (
                 <div className="space-y-3">
                   {facturas.map((factura, index) => {
-                    // VARIABLES SEGURAS: Si algo falla, se protege aquí
                     const idFact = factura?.id;
                     const montoFact = factura?.monto ? Number(factura.monto).toFixed(2) : '0.00';
                     const estaPagada = factura?.pagada === true;
-                    // Aseguramos que la fecha sea válida antes de formatearla
                     const fechaEsValida = factura?.vencimiento && !isNaN(new Date(factura.vencimiento).getTime());
                     
                     return (
@@ -252,15 +309,47 @@ const DetalleCliente = () => {
         </div>
       </div>
 
-      {/* MODAL DE PAGO OCULTO POR ESPACIO */}
+      {/* MODAL DE PAGO COMPLETO */}
       {showModalPago && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            {/* Contenido del modal (puedes dejar el que ya tenías) */}
-            <div className="bg-white p-8 rounded-3xl w-full max-w-md">
-                <h3 className="text-xl font-black mb-4">Confirmar Pago</h3>
-                <button onClick={() => handleRegistrarPago({preventDefault: () => {}})} className="bg-green-500 text-white w-full p-4 rounded-xl font-bold">Cobrar {pagoData.monto}</button>
-                <button onClick={() => setShowModalPago(false)} className="bg-slate-100 text-slate-600 w-full p-4 rounded-xl mt-2 font-bold">Cancelar</button>
-            </div>
+          <div className="bg-white w-full max-w-md rounded-[2.5rem] p-8 shadow-2xl animate-in fade-in zoom-in duration-200">
+            <h3 className="text-xl font-black text-slate-800 mb-1">Registrar Pago</h3>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-6">
+              Cliente: <span className="text-blue-500">{cliente?.nombre}</span>
+            </p>
+
+            <form onSubmit={handleRegistrarPago} className="space-y-4">
+              <div>
+                <label className="text-[10px] font-black text-slate-400 ml-4 mb-1 block uppercase">Monto a cobrar ($)</label>
+                <input required type="number" step="any" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-xl font-black text-slate-800" value={pagoData.monto} onChange={e => setPagoData({...pagoData, monto: e.target.value})} />
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-[10px] font-black text-slate-400 ml-4 mb-1 block uppercase">Mes a saldar</label>
+                  <input required type="text" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold" value={pagoData.mesCorrespondiente} onChange={e => setPagoData({...pagoData, mesCorrespondiente: e.target.value})} />
+                </div>
+                <div>
+                  <label className="text-[10px] font-black text-slate-400 ml-4 mb-1 block uppercase">Método</label>
+                  <select className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold text-slate-600" value={pagoData.metodoPago} onChange={e => setPagoData({...pagoData, metodoPago: e.target.value})}>
+                    <option value="Efectivo">Efectivo</option>
+                    <option value="Transferencia">Transferencia</option>
+                    <option value="Tarjeta">Tarjeta</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black text-slate-400 ml-4 mb-1 block uppercase">Notas (Opcional)</label>
+                <input type="text" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold" placeholder="Ej. Dejó $50 a cuenta" value={pagoData.notas} onChange={e => setPagoData({...pagoData, notas: e.target.value})} />
+              </div>
+
+              <div className="flex gap-4 mt-6">
+                <button type="button" onClick={() => setShowModalPago(false)} className="flex-1 p-4 rounded-2xl font-black text-xs uppercase tracking-widest text-slate-500 bg-slate-100 hover:bg-slate-200 transition-all">Cancelar</button>
+                <button type="submit" className="flex-1 p-4 rounded-2xl font-black text-xs uppercase tracking-widest text-white bg-green-500 hover:bg-green-600 shadow-lg shadow-green-200 transition-all">Confirmar Pago</button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 

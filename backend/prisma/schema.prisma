@@ -21,6 +21,8 @@ model Cliente {
   id            Int       @id @default(autoincrement())
   nombre        String
   numCliente    String    @unique
+  email         String?
+  telefono      String?
   usuario       Usuario   @relation(fields: [usuarioId], references: [id])
   usuarioId     String    @unique
   servicios     Servicio[]

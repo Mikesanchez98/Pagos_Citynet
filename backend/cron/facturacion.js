@@ -1,6 +1,7 @@
 const cron = require('node-cron');
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
+const { enviarWhatsAppFactura } = require('../services/whatsapp');
 
 // Configuración de CRON: '0 1 * * *' significa "Todos los días a la 1:00 AM"
 const iniciarCronFacturacion = () => {
@@ -40,6 +41,15 @@ const iniciarCronFacturacion = () => {
               servicioId: servicio.id,
             }
           });
+
+          if (cliente.telefono) {
+            await enviarWhatsAppFactura(
+                cliente.telefono,
+                cliente.nombre,
+                servicio.precio,
+                fechaVencimiento
+            )
+          }
           
           facturasGeneradas++;
         }

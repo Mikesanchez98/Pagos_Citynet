@@ -13,7 +13,7 @@ const AdminPanel = () => {
   const [editandoId, setEditandoId] = useState(null);
   const [torresDisponibles, setTorresDisponibles] = useState([]);
   
-  // FORMULARIO ORIGINAL
+  // FORMULARIO ACTUALIZADO (Con teléfono)
   const [form, setForm] = useState({
     email: '',
     password: '',
@@ -26,7 +26,8 @@ const AdminPanel = () => {
     direccion: '',
     latitud: '',
     longitud: '',
-    torreId: ''
+    torreId: '',
+    telefono: '' // <-- Agregado
   });
 
   // --- NUEVOS ESTADOS PARA EL MODAL DE PAGO ---
@@ -186,7 +187,8 @@ const AdminPanel = () => {
     setEditandoId(null);
     setForm({ 
       email: '', password: '', nombre: '', numCliente: 'CT-', plan: 'Fibra 20 Mbps', 
-      precio: 550, ip: '', diaCobro: 1, direccion: '', latitud: '', longitud: '', torreId: '' 
+      precio: 550, ip: '', diaCobro: 1, direccion: '', latitud: '', longitud: '', torreId: '',
+      telefono: '' // <-- Agregado
     });
   };
 
@@ -215,7 +217,8 @@ const AdminPanel = () => {
         direccion: clienteFresco.direccion || '',
         latitud: clienteFresco.latitud || '',
         longitud: clienteFresco.longitud || '',
-        torreId: clienteFresco.torreId || ''
+        torreId: clienteFresco.torreId || '',
+        telefono: clienteFresco.telefono || '' // <-- Agregado
       });
 
     } catch (error) {
@@ -260,6 +263,7 @@ const AdminPanel = () => {
         </div>
         
         <div className="flex gap-4">
+          <button onClick={() => navigate('/admin/cobranza')} className="text-[10px] font-black px-4 py-2 rounded-xl border border-orange-500/30 text-orange-500 hover:bg-green-500 hover:text-white transition-all uppercase">Gestor de Cobranza</button>
           <button onClick={() => navigate('/admin/mapa')} className="text-[10px] font-black px-4 py-2 rounded-xl border border-green-500/30 text-green-500 hover:bg-green-500 hover:text-white transition-all uppercase">Ver Mapa</button>
           <button onClick={() => navigate('/admin/torres')} className="text-[10px] font-black px-4 py-2 rounded-xl border border-blue-500/30 text-blue-400 hover:bg-blue-500 hover:text-white transition-all uppercase">Gestionar Torres</button>
           <button onClick={() => navigate('/admin/logistica')} className="text-[10px] font-black px-4 py-2 rounded-xl border border-purple-500/30 text-purple-500 hover:bg-purple-500 hover:text-white transition-all uppercase">Gestionar Logística</button>
@@ -307,6 +311,20 @@ const AdminPanel = () => {
                   <option value={1}>Grupo 1 (Cobro día 1 del mes)</option>
                   <option value={15}>Grupo 15 (Cobro día 15 del mes)</option>
                 </select>
+              </div>
+
+              {/* Campo para el Teléfono CORREGIDO */}
+              <div className="flex flex-col gap-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">
+                  Teléfono (WhatsApp)
+                </label>
+                <input 
+                  type="text" 
+                  placeholder="Ej: 3121887170"
+                  value={form.telefono}
+                  onChange={(e) => setForm({...form, telefono: e.target.value})}
+                  className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold placeholder:text-slate-400 focus:border-blue-500 outline-none transition-all"
+                />
               </div>
 
               <input required disabled={editandoId} type="email" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold disabled:opacity-40" placeholder="Correo Electrónico" value={form.email} onChange={e => setForm({...form, email: e.target.value})} />

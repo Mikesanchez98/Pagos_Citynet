@@ -10,6 +10,7 @@ import TorresPanel from './pages/TorresPanel';
 import MapaPanel from './pages/MapaPanel';
 import Logistica from './pages/Logistica';
 import DetalleCliente from './pages/DetalleCliente';
+import CobranzaMasiva from './pages/CobranzaMasiva';
 
 function App() {
   return (
@@ -25,6 +26,7 @@ function App() {
         <Route path="/admin/mapa" element={<MapaPanel />} />
         <Route path="/admin/logistica" element={<Logistica />} />
         <Route path="/admin/cliente/:id" element={<DetalleCliente />} />
+        <Route path="/admin/cobranza" element={<CobranzaMasiva />} />
         <Route path="*" element={<Login />} />
       </Routes>
     </Router>
