@@ -27,8 +27,12 @@ const PORT = process.env.PORT || 3001;
 
 // Middlewares
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://127.0.0.1:5173'], // Los puertos típicos de Vite
-  credentials: true,
+  origin: [
+    'http://localhost:5173',                  // Frontend local (Vite)
+    'http://127.0.0.1:5173',                 // Frontend local (IP alternativa)
+    'https://citynet-frontend.vercel.app'    // 🌐 TU FRONTEND EN PRODUCCIÓN (Vercel)
+  ],
+  credentials: true,                          // Permite el envío de cookies/tokens de sesión
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
