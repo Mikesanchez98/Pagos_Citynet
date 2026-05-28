@@ -23,7 +23,7 @@ const DetalleCliente = () => {
       const token = localStorage.getItem('token');
       if (!token) return navigate('/login');
       
-      const res = await axios.get(`http://pagos-citynet.vercel.app/api/admin/cliente/${id}`, {
+      const res = await axios.get(`https://pagos-citynet.vercel.app/api/admin/cliente/${id}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       
@@ -46,7 +46,7 @@ const DetalleCliente = () => {
     e.preventDefault();
     try {
       const token = localStorage.getItem('token');
-      await axios.post('http://pagos-citynet.vercel.app/api/admin/pagos', 
+      await axios.post('https://pagos-citynet.vercel.app/api/admin/pagos', 
         { clienteId: cliente.id, ...pagoData },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -63,7 +63,7 @@ const DetalleCliente = () => {
     if (!window.confirm("¿Confirmas que esta factura ha sido pagada?")) return;
     try {
       const token = localStorage.getItem('token');
-      await axios.patch(`http://pagos-citynet.vercel.app/api/admin/factura/${facturaId}/pagar`, {}, {
+      await axios.patch(`https://pagos-citynet.vercel.app/api/admin/factura/${facturaId}/pagar`, {}, {
         headers: { Authorization: `Bearer ${token}` }
       });
       fetchClienteDetalle();
@@ -74,7 +74,7 @@ const DetalleCliente = () => {
     if(!window.confirm("¿Generar una nueva factura manual para este cliente?")) return;
     try {
       const token = localStorage.getItem('token');
-      await axios.post(`http://pagos-citynet.vercel.app/api/admin/servicio/${servicioId}/generar-factura`, 
+      await axios.post(`https://pagos-citynet.vercel.app/api/admin/servicio/${servicioId}/generar-factura`, 
         { servicioId, monto: precio }, 
         {headers: { Authorization: `Bearer ${token}` }
       });
@@ -85,7 +85,7 @@ const DetalleCliente = () => {
   const descargarRecibo = (facturaId) => {
     if (!facturaId) return alert("Error: No se puede generar PDF sin un ID");
     const token = localStorage.getItem('token');
-    window.open(`http://pagos-citynet.vercel.app/api/admin/factura/${facturaId}/pdf?token=${token}`, '_blank');
+    window.open(`https://pagos-citynet.vercel.app/api/admin/factura/${facturaId}/pdf?token=${token}`, '_blank');
   };
 
   // EXTRACCIÓN SEGURA DE DATOS PARA FUNCIONES DE WHATSAPP Y RENDERIZADO

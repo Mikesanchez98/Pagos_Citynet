@@ -23,7 +23,7 @@ const CobranzaMasiva = () => {
 
       // Asumimos que tu endpoint principal trae a los clientes con sus facturas
       // Si tu backend tiene un endpoint específico para morosos, puedes cambiar esta URL
-      const res = await axios.get('http://pagos-citynet.vercel.app/api/admin/clientes', {
+      const res = await axios.get('https://pagos-citynet.vercel.app/api/admin/clientes', {
         headers: { Authorization: `Bearer ${token}` }
       });
 
