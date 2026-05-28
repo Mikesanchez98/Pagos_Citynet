@@ -4,7 +4,7 @@ const cors = require('cors');
 require('dotenv').config();
 
 if (!process.env.VERCEL !== '1') {
-  requiere('./services/automatizacion'); // Importamos el servicio de automatización (cron job) solo si no estamos en Vercel
+  require('./services/automatizacion'); // Importamos el servicio de automatización (cron job) solo si no estamos en Vercel
 }
 
 // Importar rutas
