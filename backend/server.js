@@ -36,3 +36,5 @@ app.listen(PORT, () => {
 app.get('/', (req, res) => {
   res.send('🚀 Servidor de Citynet operando correctamente');
 });
+
+module.exports = app; // Exportamos la app para pruebas o uso en otros módulos
