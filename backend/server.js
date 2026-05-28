@@ -3,15 +3,14 @@ const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
 
-if (!process.env.VERCEL !== '1') {
-  require('./services/automatizacion'); // Importamos el servicio de automatización (cron job) solo si no estamos en Vercel
-}
 
 // Importar rutas
 const authRoutes = require('./routes/auth');
 const clienteRoutes = require('./routes/cliente');
 const adminRoutes = require('./routes/admin');
-require('./services/automatizacion'); // Importamos el servicio de automatización (cron job)
+if (!process.env.VERCEL !== '1') {
+  require('./services/automatizacion'); // Importamos el servicio de automatización (cron job) solo si no estamos en Vercel
+}
 const webhook = require('./routes/webhook'); // Importamos la ruta del webhook de Openpay
 const rutasPagos = require('./routes/pagos'); // Importamos la ruta de pagos
 const iniciarCronFacturacion = require('./cron/facturacion'); // Importamos el cron de facturación
