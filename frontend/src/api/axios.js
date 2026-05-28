@@ -8,7 +8,7 @@ const esLocal =
 // 2. Asignamos la URL base correspondiente asegurando el protocolo correcto
 const API_URL = esLocal
   ? 'http://127.0.0.1:3001/api'                // Tu backend local
-  : 'https://pagos-citynet.vercel.app/api';    // Tu backend de Vercel (Asegúrate que sea tu URL exacta)
+  : 'https://citynet-frontend.vercel.app/api';    // Tu backend de Vercel (Asegúrate que sea tu URL exacta)
 
 const api = axios.create({
   baseURL: API_URL,
