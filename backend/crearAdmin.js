@@ -4,7 +4,7 @@ const prisma = new PrismaClient();
 
 async function main() {
   const adminEmail = 'admin@citynet.com';
-  const adminPassword = 'admin123'; // En producción esto debe ir encriptado con bcrypt
+  const adminPassword = 'CitynetADM202411!!'; // En producción esto debe ir encriptado con bcrypt
 
   const adminExistente = await prisma.usuario.findUnique({
     where: { email: adminEmail }
