@@ -46,4 +46,24 @@ router.get('/perfil', verificarToken, async (req, res) => {
   }
 });
 
+// CREAR TICKET DESDE EL PORTAL DEL CLIENTE
+router.post('/mis-tickets', async (req, res) => {
+  const { clienteId, titulo, descripcion } = req.body; 
+  
+  try {
+    const nuevoTicket = await prisma.ticket.create({
+      data: {
+        titulo,
+        descripcion,
+        prioridad: 'MEDIA', 
+        clienteId: parseInt(clienteId)
+      }
+    });
+    res.json({ mensaje: "Ticket creado exitosamente", ticket: nuevoTicket });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Error al crear el ticket" });
+  }
+});
+
 module.exports = router;

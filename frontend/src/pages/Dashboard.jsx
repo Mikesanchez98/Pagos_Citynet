@@ -3,11 +3,13 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import logoCitynet from '../assets/logo-citynet-antiguo.png'; 
 import axios from 'axios';
+import SoporteCliente from '../pages/SoporteCliente'; // <-- NUEVO: Importación del componente de soporte
 
 const Dashboard = () => {
   const navigate = useNavigate();
   const [datos, setDatos] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('resumen'); // <-- NUEVO: Estado para controlar las pestañas
 
   useEffect(() => {
     const cargarDatos = async () => {
@@ -44,25 +46,19 @@ const Dashboard = () => {
     navigate('/login');
   };
 
-  // --- NUEVA FUNCIÓN PARA OPENPAY ---
   const handlePagar = async () => {
     try {
-      // 1. Buscamos el token en el almacenamiento del navegador
-      // NOTA: Si en tu login lo guardaste con otro nombre, cámbialo aquí.
       const token = localStorage.getItem('token'); 
 
-      // 2. Si por alguna razón no hay token, detenemos la función
       if (!token) {
         alert('No se encontró tu sesión. Por favor, vuelve a iniciar sesión.');
         return;
       }
 
-      // 3. Ahora sí, hacemos la petición enviando el token real
       const respuesta = await axios.post('http://localhost:3001/api/pagos/crear-checkout', {}, {
         headers: { Authorization: `Bearer ${token}` } 
       });
 
-      // 4. Redirigimos a la pasarela de Openpay
       if (respuesta.data && respuesta.data.url) {
         window.location.href = respuesta.data.url;
       }
@@ -72,7 +68,6 @@ const Dashboard = () => {
       alert('Hubo un error al generar tu enlace de pago.');
     }
   };
-  // ----------------------------------
 
   if (loading) {
     return (
@@ -85,7 +80,6 @@ const Dashboard = () => {
     );
   }
 
-  // Formatear la fecha para el diseño anterior
   const fechaVencimientoFormateada = datos?.vencimiento 
     ? new Date(datos.vencimiento).toLocaleDateString('es-MX', { 
         day: 'numeric', 
@@ -96,10 +90,9 @@ const Dashboard = () => {
   return (
     <div className="min-h-screen bg-slate-50 pb-10">
       
-      {/* Navbar Superior (Diseño Original con fondo Azul) */}
+      {/* Navbar Superior */}
       <nav className="bg-primary text-white p-4 shadow-md flex justify-between items-center">
         <div className="flex items-center gap-2">
-            {/* Usamos un filtro brightness-0 invert para que el logo negro se vea blanco en el fondo azul */}
             <img src={logoCitynet} alt="Logo Citynet" className="h-12 object-contain brightness-0 invert" />
         </div>
         <button 
@@ -118,97 +111,124 @@ const Dashboard = () => {
           <p className="text-slate-500 text-sm font-medium">Número de Cliente: <span className="text-primary font-bold">{datos?.numCliente}</span></p>
         </div>
 
-        {/* Tarjeta 1: Estado del Servicio (Técnico) */}
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between">
-          <div>
-            <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-1">Plan Contratado</p>
-            <p className="font-extrabold text-slate-800 text-xl">{datos?.plan || 'Básico'}</p>
-            <div className="flex items-center gap-2 mt-2">
-                <span className="text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded font-mono uppercase">IP asignada</span>
-                <p className="text-sm font-mono text-blue-600 font-semibold">{datos?.ip || '0.0.0.0'}</p>
+        {/* --- NUEVO: SELECTOR DE PESTAÑAS --- */}
+        <div className="flex gap-2 bg-slate-200/50 p-1.5 rounded-2xl w-fit mx-auto">
+          <button 
+            onClick={() => setActiveTab('resumen')}
+            className={`px-6 py-2.5 rounded-xl font-black text-[11px] uppercase tracking-widest transition-all ${activeTab === 'resumen' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+          >
+            📊 Mi Servicio
+          </button>
+          <button 
+            onClick={() => setActiveTab('soporte')}
+            className={`px-6 py-2.5 rounded-xl font-black text-[11px] uppercase tracking-widest transition-all ${activeTab === 'soporte' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+          >
+            🛠️ Soporte Técnico
+          </button>
+        </div>
+        {/* ----------------------------------- */}
+
+        {/* CONTENIDO DINÁMICO SEGÚN LA PESTAÑA */}
+        <div className="animate-in fade-in duration-500">
+          {activeTab === 'resumen' ? (
+            <div className="space-y-6">
+              {/* Tarjeta 1: Estado del Servicio (Técnico) */}
+              <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-1">Plan Contratado</p>
+                  <p className="font-extrabold text-slate-800 text-xl">{datos?.plan || 'Básico'}</p>
+                  <div className="flex items-center gap-2 mt-2">
+                      <span className="text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded font-mono uppercase">IP asignada</span>
+                      <p className="text-sm font-mono text-blue-600 font-semibold">{datos?.ip || '0.0.0.0'}</p>
+                  </div>
+                </div>
+                
+                <div className="flex flex-col items-end">
+                  <span className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-2">Estatus</span>
+                  {datos?.estado?.toLowerCase() === 'activo' ? (
+                    <div className="flex items-center gap-2 bg-green-50 text-green-700 px-4 py-1.5 rounded-full border border-green-200">
+                      <span className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse"></span>
+                      <span className="text-sm font-bold uppercase">Activo</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 bg-red-50 text-red-700 px-4 py-1.5 rounded-full border border-red-200">
+                      <span className="w-2.5 h-2.5 rounded-full bg-red-500"></span>
+                      <span className="text-sm font-bold uppercase">Suspendido</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Tarjeta 2: Resumen Financiero */}
+              <div className="bg-white rounded-3xl shadow-xl border border-slate-100 overflow-hidden">
+                <div className="p-8 text-center border-b border-slate-50">
+                  <p className="text-slate-500 font-bold uppercase text-xs tracking-widest mb-3">Total a Pagar</p>
+                  <div className="flex items-center justify-center gap-1">
+                      <span className="text-2xl font-bold text-slate-400 self-start mt-2">$</span>
+                      <h2 className="text-6xl font-black text-slate-800 tracking-tighter">
+                          {Number(datos?.montoPendiente || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                      </h2>
+                      <span className="text-lg text-slate-400 font-bold ml-2">MXN</span>
+                  </div>
+                  
+                  <div className="mt-4 inline-block bg-slate-50 border border-slate-100 px-4 py-2 rounded-xl">
+                      <p className="text-sm text-slate-500 font-medium">
+                        Próximo vencimiento: <span className="font-bold text-slate-800">{fechaVencimientoFormateada}</span>
+                      </p>
+                  </div>
+                </div>
+                
+                <div className="p-6 bg-slate-50/50">
+                  {datos?.montoPendiente <= 0 ? (
+                    <div className="w-full py-4 text-center text-green-700 font-bold bg-green-100/50 rounded-2xl border border-green-200 flex items-center justify-center gap-2">
+                      ✨ ¡Tu cuenta está al día! No tienes pagos pendientes.
+                    </div>
+                  ) : (
+                    <button 
+                      onClick={handlePagar}
+                      className="w-full bg-primary hover:bg-blue-700 text-white font-black py-5 rounded-2xl shadow-lg shadow-blue-200/50 transition-all active:scale-[0.98] text-xl flex items-center justify-center gap-3">
+                      💳 PAGAR AHORA
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Historial Rápido */}
+              <div className="pt-2">
+                <h3 className="text-slate-800 font-bold mb-4 ml-1">Estado de Cuenta</h3>
+                <div className={`p-5 rounded-2xl shadow-sm border flex justify-between items-center transition-hover ${datos?.montoPendiente > 0 ? 'bg-white border-slate-100 hover:border-red-200' : 'bg-green-50 border-green-100'}`}>
+                  <div className="flex items-center gap-4">
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xl ${datos?.montoPendiente > 0 ? 'bg-blue-50' : 'bg-green-100'}`}>
+                      {datos?.montoPendiente > 0 ? '📄' : '✅'}
+                    </div>
+                    <div>
+                      <p className={`font-bold ${datos?.montoPendiente > 0 ? 'text-slate-700' : 'text-green-800'}`}>
+                        {datos?.montoPendiente > 0 ? 'Pago de Mensualidad' : 'Mensualidad Cubierta'}
+                      </p>
+                      <p className={`${datos?.montoPendiente > 0 ? 'text-slate-400' : 'text-green-600'} text-xs font-medium`}>Servicio de Internet Fibra</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                      <p className={`font-black ${datos?.montoPendiente > 0 ? 'text-slate-700' : 'text-green-700'}`}>
+                        ${Number(datos?.montoPendiente || 0).toFixed(2)}
+                      </p>
+                      {datos?.montoPendiente > 0 ? (
+                        <p className="text-[10px] text-red-500 font-bold uppercase">Pendiente</p>
+                      ) : (
+                        <p className="text-[10px] text-green-600 font-bold uppercase">Pagado</p>
+                      )}
+                  </div>
+                </div>
+              </div>
             </div>
-          </div>
-          
-          <div className="flex flex-col items-end">
-            <span className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-2">Estatus</span>
-            {datos?.estado?.toLowerCase() === 'activo' ? (
-              <div className="flex items-center gap-2 bg-green-50 text-green-700 px-4 py-1.5 rounded-full border border-green-200">
-                <span className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse"></span>
-                <span className="text-sm font-bold uppercase">Activo</span>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2 bg-red-50 text-red-700 px-4 py-1.5 rounded-full border border-red-200">
-                <span className="w-2.5 h-2.5 rounded-full bg-red-500"></span>
-                <span className="text-sm font-bold uppercase">Suspendido</span>
-              </div>
-            )}
-          </div>
+          ) : (
+            /* --- NUEVO: RENDERIZADO DEL COMPONENTE DE TICKETS --- */
+            <div className="animate-in slide-in-from-bottom-4 duration-500">
+               <SoporteCliente clienteId={datos?.id} />
+            </div>
+          )}
         </div>
 
-        {/* Tarjeta 2: Resumen Financiero (El diseño grande que te gustaba) */}
-        <div className="bg-white rounded-3xl shadow-xl border border-slate-100 overflow-hidden">
-          <div className="p-8 text-center border-b border-slate-50">
-            <p className="text-slate-500 font-bold uppercase text-xs tracking-widest mb-3">Total a Pagar</p>
-            <div className="flex items-center justify-center gap-1">
-                <span className="text-2xl font-bold text-slate-400 self-start mt-2">$</span>
-                
-                {/* ELIMINA CUALQUIER NÚMERO QUE ESTÉ AQUÍ ESCRITO A MANO */}
-                <h2 className="text-6xl font-black text-slate-800 tracking-tighter">
-                    {Number(datos?.montoPendiente || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}
-                </h2>
-                
-                <span className="text-lg text-slate-400 font-bold ml-2">MXN</span>
-            </div>
-            
-            <div className="mt-4 inline-block bg-slate-50 border border-slate-100 px-4 py-2 rounded-xl">
-                <p className="text-sm text-slate-500 font-medium">
-                  Próximo vencimiento: <span className="font-bold text-slate-800">{fechaVencimientoFormateada}</span>
-                </p>
-            </div>
-          </div>
-          
-          <div className="p-6 bg-slate-50/50">
-            {datos?.montoPendiente <= 0 ? (
-              <div className="w-full py-4 text-center text-green-700 font-bold bg-green-100/50 rounded-2xl border border-green-200 flex items-center justify-center gap-2">
-                ✨ ¡Tu cuenta está al día! No tienes pagos pendientes.
-              </div>
-            ) : (
-              <button 
-                onClick={handlePagar} /* <--- AQUÍ CAMBIÉ EL onClick POR handlePagar */
-                className="w-full bg-primary hover:bg-blue-700 text-white font-black py-5 rounded-2xl shadow-lg shadow-blue-200/50 transition-all active:scale-[0.98] text-xl flex items-center justify-center gap-3">
-                💳 PAGAR AHORA
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Historial Rápido (Lógica Condicional Aplicada) */}
-        <div className="pt-2">
-          <h3 className="text-slate-800 font-bold mb-4 ml-1">Estado de Cuenta</h3>
-          <div className={`p-5 rounded-2xl shadow-sm border flex justify-between items-center transition-hover ${datos?.montoPendiente > 0 ? 'bg-white border-slate-100 hover:border-red-200' : 'bg-green-50 border-green-100'}`}>
-            <div className="flex items-center gap-4">
-              <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xl ${datos?.montoPendiente > 0 ? 'bg-blue-50' : 'bg-green-100'}`}>
-                {datos?.montoPendiente > 0 ? '📄' : '✅'}
-              </div>
-              <div>
-                <p className={`font-bold ${datos?.montoPendiente > 0 ? 'text-slate-700' : 'text-green-800'}`}>
-                  {datos?.montoPendiente > 0 ? 'Pago de Mensualidad' : 'Mensualidad Cubierta'}
-                </p>
-                <p className={`${datos?.montoPendiente > 0 ? 'text-slate-400' : 'text-green-600'} text-xs font-medium`}>Servicio de Internet Fibra</p>
-              </div>
-            </div>
-            <div className="text-right">
-                <p className={`font-black ${datos?.montoPendiente > 0 ? 'text-slate-700' : 'text-green-700'}`}>
-                  ${Number(datos?.montoPendiente || 0).toFixed(2)}
-                </p>
-                {datos?.montoPendiente > 0 ? (
-                  <p className="text-[10px] text-red-500 font-bold uppercase">Pendiente</p>
-                ) : (
-                  <p className="text-[10px] text-green-600 font-bold uppercase">Pagado</p>
-                )}
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   );

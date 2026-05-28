@@ -751,4 +751,64 @@ router.post('/servicio/:servicioId/generar-factura', async (req, res) => {
   }
 });
 
+// ==========================================
+// 🛠️ MÓDULO DE SOPORTE TÉCNICO (TICKETS)
+// ==========================================
+
+// 1. OBTENER TODOS LOS TICKETS (Para el panel global de técnicos)
+router.get('/tickets', async (req, res) => {
+  try {
+    const tickets = await prisma.ticket.findMany({
+      include: { 
+        cliente: {
+          select: { nombre: true, telefono: true, direccion: true } 
+        } 
+      },
+      orderBy: { createdAt: 'desc' } // Los más nuevos primero
+    });
+    res.json(tickets);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Error al obtener los tickets" });
+  }
+});
+
+// 2. CREAR UN TICKET PARA UN CLIENTE
+router.post('/cliente/:id/tickets', async (req, res) => {
+  const { id } = req.params;
+  const { titulo, descripcion, prioridad } = req.body;
+  
+  try {
+    const nuevoTicket = await prisma.ticket.create({
+      data: {
+        titulo,
+        descripcion,
+        prioridad: prioridad || 'MEDIA',
+        clienteId: parseInt(id) // OJO: Si tu clienteId no es número, quita el parseInt()
+      }
+    });
+    res.json(nuevoTicket);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Error al crear el ticket" });
+  }
+});
+
+// 3. ACTUALIZAR UN TICKET (Cambiar estatus o agregar notas)
+router.put('/tickets/:id', async (req, res) => {
+  const { id } = req.params;
+  const { estatus, notasAdmin, prioridad } = req.body;
+  
+  try {
+    const ticketActualizado = await prisma.ticket.update({
+      where: { id: parseInt(id) },
+      data: { estatus, notasAdmin, prioridad }
+    });
+    res.json(ticketActualizado);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Error al actualizar el ticket" });
+  }
+});
+
 module.exports = router;

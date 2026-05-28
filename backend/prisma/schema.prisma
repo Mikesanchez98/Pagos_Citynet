@@ -7,6 +7,7 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  directUrl= env("DIRECT_URL")
 }
 
 model Usuario {
@@ -36,6 +37,7 @@ model Cliente {
   torre         Torre?    @relation(fields: [torreId], references: [id])
 
   pagos         Pago[]
+  tickets       Ticket[]
 }
 
 model Torre {
@@ -76,4 +78,19 @@ model Pago {
 
   clienteId   Int
   cliente     Cliente  @relation(fields: [clienteId], references: [id])
+}
+
+model Ticket{
+  id          Int      @id @default(autoincrement())
+  titulo      String   // Ej: "Sin internet", "Falla de router"
+  descripcion String?  @db.Text // Detalles del reporte
+  estatus     String   @default("PENDIENTE") // PENDIENTE, EN PROCESO, RESUELTO
+  prioridad   String   @default("MEDIA")     // ALTA, MEDIA, BAJA
+  notasAdmin  String?  @db.Text // Notas internas de los técnicos
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relación con Cliente
+  clienteId   Int
+  cliente     Cliente  @relation(fields: [clienteId], references: [id], onDelete: Cascade)
 }
