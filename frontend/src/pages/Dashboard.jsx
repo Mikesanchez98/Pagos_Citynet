@@ -20,7 +20,7 @@ const Dashboard = () => {
           return;
         }
 
-        const response = await axios.get('http://localhost:3001/api/cliente/perfil', {
+        const response = await axios.get('http://pagos-citynet.vercel.app/api/cliente/perfil', {
           headers: {
             'Authorization': `Bearer ${token}`
           }
@@ -55,7 +55,7 @@ const Dashboard = () => {
         return;
       }
 
-      const respuesta = await axios.post('http://localhost:3001/api/pagos/crear-checkout', {}, {
+      const respuesta = await axios.post('http://pagos-citynet.vercel.app/api/pagos/crear-checkout', {}, {
         headers: { Authorization: `Bearer ${token}` } 
       });
 

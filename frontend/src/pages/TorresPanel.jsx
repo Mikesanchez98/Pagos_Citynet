@@ -36,7 +36,7 @@ const TorresPanel = () => {
   const obtenerTorres = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:3001/api/admin/torres', {
+      const response = await axios.get('http://pagos-citynet.vercel.app/api/admin/torres', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setTorres(Array.isArray(response.data) ? response.data : []);
@@ -79,13 +79,13 @@ const TorresPanel = () => {
 
       if (editMode) {
         // RUTA PARA ACTUALIZAR
-        await axios.put(`http://localhost:3001/api/admin/torres/${torreId}`, data, {
+        await axios.put(`http://pagos-citynet.vercel.app/api/admin/torres/${torreId}`, data, {
           headers: { Authorization: `Bearer ${token}` }
         });
         setStatus({ msg: 'Torre actualizada correctamente', type: 'success' });
       } else {
         // RUTA PARA CREAR
-        await axios.post('http://localhost:3001/api/admin/torres', data, {
+        await axios.post('http://pagos-citynet.vercel.app/api/admin/torres', data, {
           headers: { Authorization: `Bearer ${token}` }
         });
         setStatus({ msg: '¡Torre registrada con éxito!', type: 'success' });

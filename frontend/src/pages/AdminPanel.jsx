@@ -61,7 +61,7 @@ const AdminPanel = () => {
   const obtenerClientes = async () => {
     try {
       const token = localStorage.getItem('token');
-      const res = await axios.get('http://localhost:3001/api/admin/clientes', {
+      const res = await axios.get('http://pagos-citynet.vercel.app/api/admin/clientes', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setClientes(Array.isArray(res.data) ? res.data : []);
@@ -76,7 +76,7 @@ const AdminPanel = () => {
   const obtenerTorresParaSelect = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:3001/api/admin/torres', {
+      const response = await axios.get('http://pagos-citynet.vercel.app/api/admin/torres', {
         headers: { Authorization: `Bearer ${token}` } 
       });
       setTorresDisponibles(response.data);
@@ -103,7 +103,7 @@ const AdminPanel = () => {
     e.preventDefault();
     try {
       const token = localStorage.getItem('token');
-      await axios.post('http://localhost:3001/api/admin/pagos', 
+      await axios.post('http://pagos-citynet.vercel.app/api/admin/pagos', 
         { clienteId: clienteActivo.id, ...pagoData },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -121,7 +121,7 @@ const AdminPanel = () => {
     if (!window.confirm("¿Marcar esta factura como pagada?")) return;
     try {
       const token = localStorage.getItem('token');
-      await axios.patch(`http://localhost:3001/api/admin/factura/${id}/pagar`, {}, {
+      await axios.patch(`http://pagos-citynet.vercel.app/api/admin/factura/${id}/pagar`, {}, {
         headers: { Authorization: `Bearer ${token}` }
       });
       obtenerClientes();
@@ -132,7 +132,7 @@ const AdminPanel = () => {
     if (!window.confirm("¿Eliminar factura permanentemente?")) return;
     try {
       const token = localStorage.getItem('token');
-      await axios.delete(`http://localhost:3001/api/admin/factura/${id}`, {
+      await axios.delete(`http://pagos-citynet.vercel.app/api/admin/factura/${id}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       obtenerClientes();
@@ -143,7 +143,7 @@ const AdminPanel = () => {
     if(!window.confirm("¿Generar factura para este servicio?")) return;
     try {
       const token = localStorage.getItem('token');
-      await axios.post(`http://localhost:3001/api/admin/servicio/${servicioId}/generar-factura`, 
+      await axios.post(`http://pagos-citynet.vercel.app/api/admin/servicio/${servicioId}/generar-factura`, 
         { servicioId, monto: precio }, 
         {headers: { Authorization: `Bearer ${token}` }
       });
@@ -155,7 +155,7 @@ const AdminPanel = () => {
     if (!window.confirm(`¿Generar facturas masivas para todos los clientes del grupo ${dia}?`)) return;
     try {
       const token = localStorage.getItem('token');
-      const res = await axios.post(`http://localhost:3001/api/admin/facturas/generar-lote`,
+      const res = await axios.post(`http://pagos-citynet.vercel.app/api/admin/facturas/generar-lote`,
         { diaCobro: dia },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -170,11 +170,11 @@ const AdminPanel = () => {
     const token = localStorage.getItem('token');
     try {
       if (editandoId) {
-        await axios.put(`http://localhost:3001/api/admin/cliente/${editandoId}`, form, {
+        await axios.put(`http://pagos-citynet.vercel.app/api/admin/cliente/${editandoId}`, form, {
           headers: { Authorization: `Bearer ${token}` }
         });
       } else {
-        await axios.post('http://localhost:3001/api/admin/registrar-cliente', form, {
+        await axios.post('http://pagos-citynet.vercel.app/api/admin/registrar-cliente', form, {
           headers: { Authorization: `Bearer ${token}` }
         });
       }
@@ -198,7 +198,7 @@ const AdminPanel = () => {
 
     try {
       const token = localStorage.getItem('token');
-      const res = await axios.get(`http://localhost:3001/api/admin/cliente/${clienteParaEditar.id}`, {
+      const res = await axios.get(`http://pagos-citynet.vercel.app/api/admin/cliente/${clienteParaEditar.id}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       
@@ -232,7 +232,7 @@ const AdminPanel = () => {
     if (!window.confirm("¡PELIGRO! ¿Estás seguro de que deseas eliminar este cliente y TODO su historial de facturas? Esta acción no se puede deshacer.")) return;
     try {
       const token = localStorage.getItem('token');
-      await axios.delete(`http://localhost:3001/api/admin/clientes/${id}`, {
+      await axios.delete(`http://pagos-citynet.vercel.app/api/admin/clientes/${id}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       obtenerClientes();
@@ -243,7 +243,7 @@ const AdminPanel = () => {
     const nuevoEstado = estadoActual === 'ACTIVO' ? 'SUSPENDIDO' : 'ACTIVO';
     try {
       const token = localStorage.getItem('token');
-      await axios.patch(`http://localhost:3001/api/admin/servicio/${servicioId}/estatus`, 
+      await axios.patch(`http://pagos-citynet.vercel.app/api/admin/servicio/${servicioId}/estatus`, 
         { nuevoEstado }, { headers: { Authorization: `Bearer ${token}` } }
       );
       obtenerClientes();

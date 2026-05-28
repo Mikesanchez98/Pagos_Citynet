@@ -18,7 +18,7 @@ const Login = () => {
 
     try {
       // 2. Petición real a tu servidor de Node.js
-      const response = await axios.post('http://localhost:3001/api/auth/login', {
+      const response = await axios.post('http://pagos-citynet.vercel.app/api/auth/login', {
         identifier, // Puede ser email o numCliente
         password
       });

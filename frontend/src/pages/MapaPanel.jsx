@@ -58,8 +58,8 @@ const MapaPanel = () => {
     try {
       const token = localStorage.getItem('token');
       const [resTorres, resClientes] = await Promise.all([
-        axios.get('http://localhost:3001/api/admin/torres', { headers: { Authorization: `Bearer ${token}` } }),
-        axios.get('http://localhost:3001/api/admin/clientes', { headers: { Authorization: `Bearer ${token}` } })
+        axios.get('http://pagos-citynet.vercel.app/api/admin/torres', { headers: { Authorization: `Bearer ${token}` } }),
+        axios.get('http://pagos-citynet.vercel.app/api/admin/clientes', { headers: { Authorization: `Bearer ${token}` } })
       ]);
       setTorres(resTorres.data);
       setClientes(resClientes.data);

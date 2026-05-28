@@ -18,7 +18,7 @@ const Logistica = () => {
           navigate('/login');
           return;
         }
-        const res = await axios.get('http://localhost:3001/api/admin/dashboard-stats', {
+        const res = await axios.get('http://pagos-citynet.vercel.app/api/admin/dashboard-stats', {
           headers: { Authorization: `Bearer ${token}` }
         });
         setStats(res.data);
