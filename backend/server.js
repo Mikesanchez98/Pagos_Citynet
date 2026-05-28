@@ -26,13 +26,24 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Middlewares
+// backend/server.js
+
+const listaBlanca = [
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'https://citynet-frontend.vercel.app'
+];
+
 app.use(cors({
-  origin: [
-    'http://localhost:5173',                  // Frontend local (Vite)
-    'http://127.0.0.1:5173',                 // Frontend local (IP alternativa)
-    'https://citynet-frontend.vercel.app'    // 🌐 TU FRONTEND EN PRODUCCIÓN (Vercel)
-  ],
-  credentials: true,                          // Permite el envío de cookies/tokens de sesión
+  origin: function (origin, callback) {
+    // Si la petición no tiene origen (como Postman o server-to-server) o está en la lista blanca
+    if (!origin || listaBlanca.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Bloqueado por políticas de CORS de Citynet'));
+    }
+  },
+  credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
