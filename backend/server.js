@@ -3,6 +3,10 @@ const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
 
+if (!process.env.VERCEL !== '1') {
+  requiere('./services/automatizacion'); // Importamos el servicio de automatización (cron job) solo si no estamos en Vercel
+}
+
 // Importar rutas
 const authRoutes = require('./routes/auth');
 const clienteRoutes = require('./routes/cliente');
@@ -26,7 +30,9 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/webhook', webhook);
 app.use('/api/pagos', rutasPagos); // Usamos la ruta de pagos
 
-iniciarCronFacturacion(); // Iniciamos el cron de facturación
+if (process.env.VERCEL !== '1') {
+  iniciarCronFacturacion(); 
+}
 
 app.listen(PORT, () => {
   console.log(`🚀 Servidor de Citynet en: http://localhost:${PORT}`);
