@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import logoCitynet from '../assets/logo-citynet-antiguo.png'; 
-import axios from 'axios';
+import api from '../api/axios'; // <-- NUEVO: Importación de la instancia de Axios personalizada
 import SoporteCliente from '../pages/SoporteCliente'; // <-- NUEVO: Importación del componente de soporte
 
 const Dashboard = () => {
@@ -20,7 +20,7 @@ const Dashboard = () => {
           return;
         }
 
-        const response = await axios.get('https://pagos-citynet.vercel.app/api/cliente/perfil', {
+        const response = await axios.get('/cliente/perfil', {
           headers: {
             'Authorization': `Bearer ${token}`
           }
@@ -55,7 +55,7 @@ const Dashboard = () => {
         return;
       }
 
-      const respuesta = await axios.post('https://pagos-citynet.vercel.app/api/pagos/crear-checkout', {}, {
+      const respuesta = await api.post('/pagos/crear-checkout', {}, {
         headers: { Authorization: `Bearer ${token}` } 
       });
 

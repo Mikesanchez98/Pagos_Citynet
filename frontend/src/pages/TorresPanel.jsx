@@ -1,6 +1,6 @@
 // src/pages/TorresPanel.jsx
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../api/axios';
 import { useNavigate, Link } from 'react-router-dom';
 import logoCitynet from '../assets/logo-citynet-antiguo.png';
 
@@ -36,7 +36,7 @@ const TorresPanel = () => {
   const obtenerTorres = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get('https://pagos-citynet.vercel.app/api/admin/torres', {
+      const response = await axios.get('/admin/torres', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setTorres(Array.isArray(response.data) ? response.data : []);
@@ -79,13 +79,13 @@ const TorresPanel = () => {
 
       if (editMode) {
         // RUTA PARA ACTUALIZAR
-        await axios.put(`https://pagos-citynet.vercel.app/api/admin/torres/${torreId}`, data, {
+        await axios.put(`/admin/torres/${torreId}`, data, {
           headers: { Authorization: `Bearer ${token}` }
         });
         setStatus({ msg: 'Torre actualizada correctamente', type: 'success' });
       } else {
         // RUTA PARA CREAR
-        await axios.post('https://pagos-citynet.vercel.app/api/admin/torres', data, {
+        await axios.post('/admin/torres', data, {
           headers: { Authorization: `Bearer ${token}` }
         });
         setStatus({ msg: '¡Torre registrada con éxito!', type: 'success' });

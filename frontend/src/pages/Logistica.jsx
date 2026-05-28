@@ -1,6 +1,6 @@
 // src/pages/Logistica.jsx
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../api/axios'; 
 import { useNavigate } from 'react-router-dom';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import logoCitynet from '../assets/logo-citynet-antiguo.png';
@@ -18,7 +18,7 @@ const Logistica = () => {
           navigate('/login');
           return;
         }
-        const res = await axios.get('https://pagos-citynet.vercel.app/api/admin/dashboard-stats', {
+        const res = await axios.get('/admin/dashboard-stats', {
           headers: { Authorization: `Bearer ${token}` }
         });
         setStats(res.data);

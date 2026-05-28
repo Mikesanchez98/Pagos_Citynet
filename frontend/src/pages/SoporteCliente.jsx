@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import axios from 'axios';
+import api from '../api/axios';
 
 const SoporteCliente = ({ clienteId }) => {
   const [titulo, setTitulo] = useState('Sin conexión a Internet');
@@ -15,7 +15,7 @@ const SoporteCliente = ({ clienteId }) => {
     try {
       const token = localStorage.getItem('token'); // Asumiendo que usas token para el cliente
       // Ajusta la URL a la ruta de tu backend para clientes
-      await axios.post('https://pagos-citynet.vercel.app/api/cliente/mis-tickets', {
+      await axios.post('/cliente/mis-tickets', {
         clienteId: clienteId, // Asegúrate de pasar el ID del cliente logueado
         titulo,
         descripcion

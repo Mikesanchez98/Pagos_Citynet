@@ -1,7 +1,7 @@
 // src/pages/Login.jsx
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios'; // 1. Importamos Axios
+import api from '../api/axios'; // Asegúrate de que esta ruta sea correcta
 import logoCitynet from '../assets/logo-citynet-antiguo.png';
 
 const Login = () => {
@@ -18,7 +18,7 @@ const Login = () => {
 
     try {
       // 2. Petición real a tu servidor de Node.js
-      const response = await axios.post('https://pagos-citynet.vercel.app/api/auth/login', {
+      const response = await axios.post('/auth/login', {
         identifier, // Puede ser email o numCliente
         password
       });

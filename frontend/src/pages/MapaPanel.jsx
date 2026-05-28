@@ -1,7 +1,7 @@
 // src/pages/MapaPanel.jsx
 import React, { useState, useEffect } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
-import axios from 'axios';
+import api from '../api/axios';
 import { useNavigate, Link } from 'react-router-dom';
 import logoCitynet from '../assets/logo-citynet-antiguo.png';
 import 'leaflet/dist/leaflet.css';
@@ -58,8 +58,8 @@ const MapaPanel = () => {
     try {
       const token = localStorage.getItem('token');
       const [resTorres, resClientes] = await Promise.all([
-        axios.get('https://pagos-citynet.vercel.app/api/admin/torres', { headers: { Authorization: `Bearer ${token}` } }),
-        axios.get('https://pagos-citynet.vercel.app/api/admin/clientes', { headers: { Authorization: `Bearer ${token}` } })
+        axios.get('/admin/torres', { headers: { Authorization: `Bearer ${token}` } }),
+        axios.get('/admin/clientes', { headers: { Authorization: `Bearer ${token}` } })
       ]);
       setTorres(resTorres.data);
       setClientes(resClientes.data);
