@@ -18,7 +18,7 @@ const Login = () => {
 
     try {
       // 2. Petición real a tu servidor de Node.js
-      const response = await axios.post('/auth/login', {
+      const response = await api.post('/auth/login', {
         identifier, // Puede ser email o numCliente
         password
       });

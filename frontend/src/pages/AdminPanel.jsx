@@ -76,7 +76,7 @@ const AdminPanel = () => {
   const obtenerTorresParaSelect = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get('/admin/torres', {
+      const response = await api.get('/admin/torres', {
         headers: { Authorization: `Bearer ${token}` } 
       });
       setTorresDisponibles(response.data);

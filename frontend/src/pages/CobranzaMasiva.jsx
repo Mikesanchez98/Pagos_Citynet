@@ -23,7 +23,7 @@ const CobranzaMasiva = () => {
 
       // Asumimos que tu endpoint principal trae a los clientes con sus facturas
       // Si tu backend tiene un endpoint específico para morosos, puedes cambiar esta URL
-      const res = await axios.get('/admin/clientes', {
+      const res = await api.get('/admin/clientes', {
         headers: { Authorization: `Bearer ${token}` }
       });
 

@@ -23,7 +23,7 @@ const DetalleCliente = () => {
       const token = localStorage.getItem('token');
       if (!token) return navigate('/login');
       
-      const res = await axios.get(`/admin/cliente/${id}`, {
+      const res = await api.get(`/admin/cliente/${id}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       

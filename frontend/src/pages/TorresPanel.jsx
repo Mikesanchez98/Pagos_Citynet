@@ -36,7 +36,7 @@ const TorresPanel = () => {
   const obtenerTorres = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get('/admin/torres', {
+      const response = await api.get('/admin/torres', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setTorres(Array.isArray(response.data) ? response.data : []);
@@ -79,13 +79,13 @@ const TorresPanel = () => {
 
       if (editMode) {
         // RUTA PARA ACTUALIZAR
-        await axios.put(`/admin/torres/${torreId}`, data, {
+        await api.put(`/admin/torres/${torreId}`, data, {
           headers: { Authorization: `Bearer ${token}` }
         });
         setStatus({ msg: 'Torre actualizada correctamente', type: 'success' });
       } else {
         // RUTA PARA CREAR
-        await axios.post('/admin/torres', data, {
+        await api.post('/admin/torres', data, {
           headers: { Authorization: `Bearer ${token}` }
         });
         setStatus({ msg: '¡Torre registrada con éxito!', type: 'success' });

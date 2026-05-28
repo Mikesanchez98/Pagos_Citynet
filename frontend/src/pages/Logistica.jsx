@@ -18,7 +18,7 @@ const Logistica = () => {
           navigate('/login');
           return;
         }
-        const res = await axios.get('/admin/dashboard-stats', {
+        const res = await api.get('/admin/dashboard-stats', {
           headers: { Authorization: `Bearer ${token}` }
         });
         setStats(res.data);

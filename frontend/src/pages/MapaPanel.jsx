@@ -58,8 +58,8 @@ const MapaPanel = () => {
     try {
       const token = localStorage.getItem('token');
       const [resTorres, resClientes] = await Promise.all([
-        axios.get('/admin/torres', { headers: { Authorization: `Bearer ${token}` } }),
-        axios.get('/admin/clientes', { headers: { Authorization: `Bearer ${token}` } })
+        api.get('/admin/torres', { headers: { Authorization: `Bearer ${token}` } }),
+        api.get('/admin/clientes', { headers: { Authorization: `Bearer ${token}` } })
       ]);
       setTorres(resTorres.data);
       setClientes(resClientes.data);

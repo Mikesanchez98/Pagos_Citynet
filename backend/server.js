@@ -3,23 +3,35 @@ const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
 
+console.log("🚩 PASO 1: Variables de entorno cargadas con éxito"); // <-- RASTREADOR 1
 
 // Importar rutas
 const authRoutes = require('./routes/auth');
 const clienteRoutes = require('./routes/cliente');
 const adminRoutes = require('./routes/admin');
-if (!process.env.VERCEL !== '1') {
-  require('./services/automatizacion'); // Importamos el servicio de automatización (cron job) solo si no estamos en Vercel
+
+console.log("🚩 PASO 2: Llegamos justo antes de la condicional de Vercel"); // <-- RASTREADOR 2
+
+if (process.env.VERCEL !== '1') {
+  require('./services/automatizacion'); 
 }
-const webhook = require('./routes/webhook'); // Importamos la ruta del webhook de Openpay
-const rutasPagos = require('./routes/pagos'); // Importamos la ruta de pagos
-const iniciarCronFacturacion = require('./cron/facturacion'); // Importamos el cron de facturación
+
+console.log("🚩 PASO 3: Pasamos la condicional sin morir"); // <-- RASTREADOR 3
+
+const webhook = require('./routes/webhook'); 
+const rutasPagos = require('./routes/pagos'); 
+const iniciarCronFacturacion = require('./cron/facturacion'); 
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Middlewares
-app.use(cors());
+app.use(cors({
+  origin: ['http://localhost:5173', 'http://127.0.0.1:5173'], // Los puertos típicos de Vite
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 app.use(express.json());
 
 // RUTAS
@@ -27,7 +39,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/cliente', clienteRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/webhook', webhook);
-app.use('/api/pagos', rutasPagos); // Usamos la ruta de pagos
+app.use('/api/pagos', rutasPagos); 
 
 if (process.env.VERCEL !== '1') {
   iniciarCronFacturacion(); 
@@ -37,9 +49,8 @@ app.listen(PORT, () => {
   console.log(`🚀 Servidor de Citynet en: http://localhost:${PORT}`);
 });
 
-// Ruta raíz para confirmar que el servidor vive
 app.get('/', (req, res) => {
   res.send('🚀 Servidor de Citynet operando correctamente');
 });
 
-module.exports = app; // Exportamos la app para pruebas o uso en otros módulos
+module.exports = app;

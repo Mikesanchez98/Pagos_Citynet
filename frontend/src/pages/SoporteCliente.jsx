@@ -15,7 +15,7 @@ const SoporteCliente = ({ clienteId }) => {
     try {
       const token = localStorage.getItem('token'); // Asumiendo que usas token para el cliente
       // Ajusta la URL a la ruta de tu backend para clientes
-      await axios.post('/cliente/mis-tickets', {
+      await api.post('/cliente/mis-tickets', {
         clienteId: clienteId, // Asegúrate de pasar el ID del cliente logueado
         titulo,
         descripcion
