@@ -13,6 +13,7 @@ const AdminPanel = () => {
   const [editandoId, setEditandoId] = useState(null);
   const [torresDisponibles, setTorresDisponibles] = useState([]);
   const [paquetesDisponibles, setPaquetesDisponibles] = useState([]);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
   
   // FORMULARIO ACTUALIZADO (Con teléfono)
   const [form, setForm] = useState({
@@ -37,6 +38,16 @@ const AdminPanel = () => {
   const [pagoData, setPagoData] = useState({
     monto: '', mesCorrespondiente: 'Abril 2026', metodoPago: 'Efectivo', notas: ''
   });
+
+  // --- NUEVOS ESTADOS PARA EL MODAL DE FACTURA (Corregido) ---
+const [showModalFactura, setShowModalFactura] = useState(false);
+const [servicioActivoFactura, setServicioActivoFactura] = useState(null);
+
+// 🟢 Cambia 'datosFactura' por 'facturaData' y 'setDatosFactura' por 'setFacturaData'
+const [facturaData, setFacturaData] = useState({
+  monto: '',
+  concepto: 'Mensualidad de Internet' 
+});
 
   const PLANES_DISPONIBLES = {
     "Fibra 20 Mbps": 550,
@@ -84,6 +95,39 @@ const AdminPanel = () => {
       setTorresDisponibles(response.data);
     } catch (error) {
       console.error("Error al cargar torres para el formulario:", error);
+    }
+  };
+
+  // ---FUNCIONES DEL MODAL DE FACTURACION---
+  // Abre el modal y carga los datos previos
+  const abrirModalFactura = (servicioId, precioActual, nombreCliente) => {
+    setServicioActivoFactura({ id: servicioId, cliente: nombreCliente });
+    setFacturaData({
+      monto: precioActual || '',
+      concepto: 'Mensualidad de Internet'
+    });
+    setShowModalFactura(true);
+  };
+
+  // Ejecuta la petición al backend cuando se envía el formulario del modal
+  const handleGenerarFacturaSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const token = localStorage.getItem('token');
+      await api.post(`/admin/servicio/${servicioActivoFactura.id}/generar-factura`, 
+        { 
+          servicioId: servicioActivoFactura.id, 
+          monto: facturaData.monto,
+          concepto: facturaData.concepto // Opcional, si tu backend lo recibe
+        }, 
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      alert(`Factura generada con éxito para ${servicioActivoFactura.cliente}`);
+      setShowModalFactura(false);
+      obtenerClientes(); // 👈 Refrescamos la tabla para ver la nueva factura
+    } catch (err) { 
+      console.error("Error al generar factura:", err);
+      alert("Error al generar la factura"); 
     }
   };
 
@@ -257,21 +301,58 @@ const AdminPanel = () => {
   return (
     <div className="min-h-screen bg-slate-50 pb-20 font-sans relative">
       
-      {/* NAVBAR OSCURO */}
-      <nav className="bg-slate-900 text-white p-4 shadow-xl flex justify-between items-center px-8">
-        <div className="flex items-center gap-4">
-          <img src={logoCitynet} alt="Logo" className="h-10 brightness-0 invert" />
-          <span className="text-[10px] font-black tracking-[0.3em] text-blue-400 border-l border-slate-700 pl-4 uppercase">Admin Panel</span>
+      {/* NAVBAR OSCURO RESPONSIVO */}
+      <nav className="bg-slate-900 text-white shadow-xl sticky top-0 z-50">
+        <div className="flex justify-between items-center p-4 px-8">
+          
+          {/* LOGO Y TÍTULO */}
+          <div className="flex items-center gap-4">
+            <img src={logoCitynet} alt="Logo" className="h-10 brightness-0 invert" />
+            <span className="text-[10px] font-black tracking-[0.3em] text-blue-400 border-l border-slate-700 pl-4 uppercase">
+              Admin Panel
+            </span>
+          </div>
+
+          {/* BOTÓN DE HAMBURGUESA (SOLO VISIBLE EN MÓVIL) */}
+          <div className="md:hidden">
+            <button 
+              onClick={() => setIsMenuOpen(!isMenuOpen)} 
+              className="text-slate-400 hover:text-white focus:outline-none transition-colors"
+            >
+              <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                {isMenuOpen ? (
+                  // Ícono de "X" cuando el menú está abierto
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                ) : (
+                  // Ícono de "Hamburguesa" cuando el menú está cerrado
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                )}
+              </svg>
+            </button>
+          </div>
+
+          {/* MENÚ DE ESCRITORIO (OCULTO EN MÓVIL, VISIBLE EN PANTALLAS MEDIANAS/GRANDES) */}
+          <div className="hidden md:flex gap-4">
+            <button onClick={() => navigate('/admin/cobranza')} className="text-[10px] font-black px-4 py-2 rounded-xl border border-orange-500/30 text-orange-500 hover:bg-orange-500 hover:text-white transition-all uppercase">Gestor de Cobranza</button>
+            <button onClick={() => navigate('/admin/mapa')} className="text-[10px] font-black px-4 py-2 rounded-xl border border-green-500/30 text-green-500 hover:bg-green-500 hover:text-white transition-all uppercase">Ver Mapa</button>
+            <button onClick={() => navigate('/admin/torres')} className="text-[10px] font-black px-4 py-2 rounded-xl border border-blue-500/30 text-blue-400 hover:bg-blue-500 hover:text-white transition-all uppercase">Gestionar Torres</button>
+            <button onClick={() => navigate('/admin/paquetes')} className="text-[10px] font-black px-4 py-2 rounded-xl border border-yellow-500/30 text-yellow-500 hover:bg-yellow-500 hover:text-white transition-all uppercase">Gestionar Paquetes</button>
+            <button onClick={() => navigate('/admin/logistica')} className="text-[10px] font-black px-4 py-2 rounded-xl border border-purple-500/30 text-purple-500 hover:bg-purple-500 hover:text-white transition-all uppercase">Gestionar Logística</button>
+            <button onClick={() => {localStorage.clear(); navigate('/login');}} className="text-[10px] font-black px-4 py-2 rounded-xl border border-red-500/30 text-red-500 hover:bg-red-500 hover:text-white transition-all uppercase">SALIR</button>
+          </div>
         </div>
-        
-        <div className="flex gap-4">
-          <button onClick={() => navigate('/admin/cobranza')} className="text-[10px] font-black px-4 py-2 rounded-xl border border-orange-500/30 text-orange-500 hover:bg-green-500 hover:text-white transition-all uppercase">Gestor de Cobranza</button>
-          <button onClick={() => navigate('/admin/mapa')} className="text-[10px] font-black px-4 py-2 rounded-xl border border-green-500/30 text-green-500 hover:bg-green-500 hover:text-white transition-all uppercase">Ver Mapa</button>
-          <button onClick={() => navigate('/admin/torres')} className="text-[10px] font-black px-4 py-2 rounded-xl border border-blue-500/30 text-blue-400 hover:bg-blue-500 hover:text-white transition-all uppercase">Gestionar Torres</button>
-          <button onClick={() => navigate('/admin/paquetes')} className="text-[10px] font-black px-4 py-2 rounded-xl border border-yellow-500/30 text-yellow-500 hover:bg-yellow-500 hover:text-white transition-all uppercase">Gestionar Paquetes</button>
-          <button onClick={() => navigate('/admin/logistica')} className="text-[10px] font-black px-4 py-2 rounded-xl border border-purple-500/30 text-purple-500 hover:bg-purple-500 hover:text-white transition-all uppercase">Gestionar Logística</button>
-          <button onClick={() => {localStorage.clear(); navigate('/login');}} className="text-[10px] font-black px-4 py-2 rounded-xl border border-red-500/30 text-red-500 hover:bg-red-500 hover:text-white transition-all">SALIR</button>
-        </div>
+
+        {/* MENÚ DESPLEGABLE PARA CELULARES */}
+        {isMenuOpen && (
+          <div className="md:hidden bg-slate-800 border-t border-slate-700 px-4 pt-2 pb-4 space-y-3 shadow-inner animate-in slide-in-from-top-2 duration-200">
+            <button onClick={() => { setIsMenuOpen(false); navigate('/admin/cobranza'); }} className="block w-full text-left text-[11px] font-black px-4 py-3 rounded-xl border border-orange-500/30 text-orange-500 hover:bg-orange-500 hover:text-white transition-all uppercase">Gestor de Cobranza</button>
+            <button onClick={() => { setIsMenuOpen(false); navigate('/admin/mapa'); }} className="block w-full text-left text-[11px] font-black px-4 py-3 rounded-xl border border-green-500/30 text-green-500 hover:bg-green-500 hover:text-white transition-all uppercase">Ver Mapa</button>
+            <button onClick={() => { setIsMenuOpen(false); navigate('/admin/torres'); }} className="block w-full text-left text-[11px] font-black px-4 py-3 rounded-xl border border-blue-500/30 text-blue-400 hover:bg-blue-500 hover:text-white transition-all uppercase">Gestionar Torres</button>
+            <button onClick={() => { setIsMenuOpen(false); navigate('/admin/paquetes'); }} className="block w-full text-left text-[11px] font-black px-4 py-3 rounded-xl border border-yellow-500/30 text-yellow-500 hover:bg-yellow-500 hover:text-white transition-all uppercase">Gestionar Paquetes</button>
+            <button onClick={() => { setIsMenuOpen(false); navigate('/admin/logistica'); }} className="block w-full text-left text-[11px] font-black px-4 py-3 rounded-xl border border-purple-500/30 text-purple-500 hover:bg-purple-500 hover:text-white transition-all uppercase">Gestionar Logística</button>
+            <button onClick={() => { localStorage.clear(); navigate('/login'); }} className="block w-full text-left text-[11px] font-black px-4 py-3 rounded-xl border border-red-500/30 text-red-500 hover:bg-red-500 hover:text-white transition-all uppercase">SALIR</button>
+          </div>
+        )}
       </nav>
 
       <div className="max-w-7xl mx-auto mt-8 px-4 grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -423,7 +504,8 @@ const AdminPanel = () => {
                         
                         {c.servicios?.[0] && (
                           <button 
-                            onClick={() => generarFactura(c.servicios?.[0]?.id, c.servicios?.[0]?.precio)} 
+                            // 🟢 AQUÍ ESTÁ EL CAMBIO: Llamamos al nuevo modal y le pasamos el nombre del cliente
+                            onClick={() => abrirModalFactura(c.servicios?.[0]?.id, c.servicios?.[0]?.precio, c.nombre)} 
                             className="mt-1 text-[10px] font-black text-slate-500 hover:text-blue-600 border border-slate-200 hover:border-blue-200 bg-white hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-all flex items-center gap-1 uppercase"
                           >
                             <span>+ Generar Cobro</span>
@@ -514,6 +596,58 @@ const AdminPanel = () => {
               <div className="flex gap-4 mt-6">
                 <button type="button" onClick={() => setShowModalPago(false)} className="flex-1 p-4 rounded-2xl font-black text-xs uppercase tracking-widest text-slate-500 bg-slate-100 hover:bg-slate-200 transition-all">Cancelar</button>
                 <button type="submit" className="flex-1 p-4 rounded-2xl font-black text-xs uppercase tracking-widest text-white bg-green-500 hover:bg-green-600 shadow-lg shadow-green-200 transition-all">Confirmar Pago</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* --- MODAL GENERAR FACTURA --- */}
+      {showModalFactura && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-2xl shadow-xl w-96">
+            <h3 className="text-xl font-bold mb-4">Generar Factura</h3>
+            <p className="text-sm text-slate-600 mb-4">
+              Cliente: <span className="font-bold">{servicioActivoFactura?.cliente}</span>
+            </p>
+
+            <form onSubmit={handleGenerarFacturaSubmit}>
+              <div className="mb-4">
+                <label className="block text-sm font-bold text-slate-700 mb-2">Concepto</label>
+                <input 
+                  type="text" 
+                  required 
+                  className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl"
+                  value={facturaData.concepto} // 👈 Asegúrate que diga facturaData
+                  onChange={(e) => setFacturaData({...facturaData, concepto: e.target.value})} 
+                />
+              </div>
+
+              <div className="mb-6">
+                <label className="block text-sm font-bold text-slate-700 mb-2">Monto a Cobrar ($)</label>
+                <input 
+                  type="number" 
+                  required 
+                  className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl"
+                  value={facturaData.monto} // 👈 Asegúrate que diga facturaData
+                  onChange={(e) => setFacturaData({...facturaData, monto: parseFloat(e.target.value)})} 
+                />
+              </div>
+
+              <div className="flex justify-end gap-3">
+                <button 
+                  type="button" 
+                  onClick={() => setShowModalFactura(false)}
+                  className="px-4 py-2 text-slate-600 font-bold bg-slate-100 rounded-xl hover:bg-slate-200"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  type="submit" 
+                  className="px-4 py-2 text-white font-bold bg-blue-600 rounded-xl hover:bg-blue-700"
+                >
+                  Generar Factura
+                </button>
               </div>
             </form>
           </div>

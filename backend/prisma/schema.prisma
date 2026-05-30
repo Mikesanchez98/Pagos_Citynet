@@ -26,6 +26,7 @@ model Cliente {
   telefono      String?
   usuario       Usuario   @relation(fields: [usuarioId], references: [id])
   usuarioId     String    @unique
+  saldo         Float     @default(0)
   servicios     Servicio[]
   diaCobro      Int       @default(1)
   direccion     String?

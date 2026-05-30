@@ -1,7 +1,7 @@
 // src/pages/DetalleCliente.jsx
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import api from '../api/axios'; // Asegúrate de que esta ruta sea correcta
+import api from '../api/axios';
 
 const DetalleCliente = () => {
   const { id } = useParams();
@@ -9,10 +9,15 @@ const DetalleCliente = () => {
   const [cliente, setCliente] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // Estados del Modal de Pago
   const [showModalPago, setShowModalPago] = useState(false);
   const [pagoData, setPagoData] = useState({
     monto: '', mesCorrespondiente: '', metodoPago: 'Efectivo', notas: ''
   });
+
+  // 🟢 NUEVO: Estados del Modal de Factura Manual
+  const [showModalFactura, setShowModalFactura] = useState(false);
+  const [facturaData, setFacturaData] = useState({ monto: '' });
 
   useEffect(() => {
     fetchClienteDetalle();
@@ -35,10 +40,21 @@ const DetalleCliente = () => {
     }
   };
 
-  // --- FUNCIONES DE FACTURACIÓN Y PAGOS ---
+  // EXTRACCIÓN SEGURA DE DATOS 
+  const servicioPrincipal = cliente?.servicios?.[0];
+  const facturas = servicioPrincipal?.facturas || [];
+  const pagos = cliente?.pagos || [];
+
+  // 🟢 NUEVO: CÁLCULOS DE BALANCE DE CUENTA
+  const deudaTotal = facturas
+    .filter(f => !f.pagada)
+    .reduce((total, f) => total + parseFloat(f.monto || 0), 0);
+  const saldoAFavor = parseFloat(cliente?.saldo || 0);
+
+  // --- FUNCIONES DE PAGOS ---
   const abrirModalPago = () => {
-    const precioSugerido = cliente?.servicios?.[0]?.precio || '';
-    setPagoData({ monto: precioSugerido, mesCorrespondiente: 'Abril 2026', metodoPago: 'Efectivo', notas: '' });
+    const precioSugerido = deudaTotal > 0 ? deudaTotal : (servicioPrincipal?.precio || '');
+    setPagoData({ monto: precioSugerido, mesCorrespondiente: '', metodoPago: 'Efectivo', notas: '' });
     setShowModalPago(true);
   };
 
@@ -58,6 +74,29 @@ const DetalleCliente = () => {
     }
   };
 
+  // --- FUNCIONES DE FACTURACIÓN ---
+  const abrirModalFactura = () => {
+    if (!servicioPrincipal) return alert("Este cliente no tiene un servicio activo.");
+    setFacturaData({ monto: servicioPrincipal.precio });
+    setShowModalFactura(true);
+  };
+
+  const handleGenerarFactura = async (e) => {
+    e.preventDefault();
+    try {
+      const token = localStorage.getItem('token');
+      await api.post(`/admin/servicio/${servicioPrincipal.id}/generar-factura`, 
+        { monto: facturaData.monto }, 
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      alert("Factura generada exitosamente");
+      setShowModalFactura(false);
+      fetchClienteDetalle();
+    } catch (err) { 
+      alert("Error al generar factura manual"); 
+    }
+  };
+
   const marcarComoPagada = async (facturaId) => {
     if (!facturaId) return alert("Error: ID de factura no válido");
     if (!window.confirm("¿Confirmas que esta factura ha sido pagada?")) return;
@@ -70,30 +109,13 @@ const DetalleCliente = () => {
     } catch (err) { alert("Error al actualizar la factura"); }
   };
 
-  const generarFactura = async (servicioId, precio) => {
-    if(!window.confirm("¿Generar una nueva factura manual para este cliente?")) return;
-    try {
-      const token = localStorage.getItem('token');
-      await api.post(`/admin/servicio/${servicioId}/generar-factura`, 
-        { servicioId, monto: precio }, 
-        {headers: { Authorization: `Bearer ${token}` }
-      });
-      fetchClienteDetalle();
-    } catch (err) { alert("Error al generar factura"); }
-  };
-
   const descargarRecibo = (facturaId) => {
     if (!facturaId) return alert("Error: No se puede generar PDF sin un ID");
     const token = localStorage.getItem('token');
     window.open(`/admin/factura/${facturaId}/pdf?token=${token}`, '_blank');
   };
 
-  // EXTRACCIÓN SEGURA DE DATOS PARA FUNCIONES DE WHATSAPP Y RENDERIZADO
-  const servicioPrincipal = cliente?.servicios?.[0];
-  const facturas = servicioPrincipal?.facturas || [];
-  const pagos = cliente?.pagos || [];
-
-  // --- FUNCION PARA ABRIR WHATSAPP NORMAL ---
+  // --- FUNCIONES DE WHATSAPP ---
   const abrirWhatsApp = () => {
     if (!cliente?.telefono) return;
     const numeroLimpio = cliente.telefono.replace(/\D/g, '');
@@ -101,31 +123,23 @@ const DetalleCliente = () => {
     window.open(`https://wa.me/${numeroFinal}`, '_blank');
   };
 
-  // --- NUEVA FUNCION PARA RECORDATORIO AUTOMÁTICO ---
   const enviarRecordatorioPago = () => {
     if (!cliente?.telefono) return alert("El cliente no tiene teléfono registrado.");
-
     const facturasPendientes = facturas.filter(f => !f.pagada);
     
     if (facturasPendientes.length === 0) {
       return alert("El cliente está al día. No hay facturas pendientes para cobrar.");
     }
 
-    // Calcula el total sumando todas las facturas pendientes
-    const montoTotal = facturasPendientes.reduce((total, f) => total + Number(f.monto || 0), 0).toFixed(2);
-    
-    // Toma la fecha de vencimiento de la primera factura pendiente
     const facturaMasAntigua = facturasPendientes[0];
     const fechaValida = facturaMasAntigua?.vencimiento && !isNaN(new Date(facturaMasAntigua.vencimiento).getTime());
     const fechaTexto = fechaValida ? new Date(facturaMasAntigua.vencimiento).toLocaleDateString() : 'tu fecha de corte';
 
-    // Construye el mensaje con emojis y formato Markdown para WhatsApp (*negritas*, _cursivas_)
-    const mensaje = `Hola *${cliente.nombre}*, te saludamos de *Citynet*. 🌐\n\nTe recordamos que presentas un saldo pendiente de *$${montoTotal}* correspondiente a tu servicio de internet. Tu fecha límite de pago es/fue el *${fechaTexto}*.\n\nPuedes realizar tu pago vía transferencia, OXXO o en nuestras oficinas.\n\n_Si ya realizaste tu pago, por favor omite este mensaje. ¡Muchas gracias por tu preferencia!_`;
+    const mensaje = `Hola *${cliente.nombre}*, te saludamos de *Citynet*. 🌐\n\nTe recordamos que presentas un saldo pendiente de *$${deudaTotal.toFixed(2)}* correspondiente a tu servicio de internet. Tu fecha límite de pago es/fue el *${fechaTexto}*.\n\nPuedes realizar tu pago vía transferencia, OXXO o en nuestras oficinas.\n\n_Si ya realizaste tu pago, por favor omite este mensaje. ¡Muchas gracias por tu preferencia!_`;
 
     const numeroLimpio = cliente.telefono.replace(/\D/g, '');
     const numeroFinal = numeroLimpio.length === 10 ? `52${numeroLimpio}` : numeroLimpio;
 
-    // Codifica el mensaje para que funcione como parámetro en la URL
     window.open(`https://wa.me/${numeroFinal}?text=${encodeURIComponent(mensaje)}`, '_blank');
   };
 
@@ -166,21 +180,12 @@ const DetalleCliente = () => {
                 Grupo: {cliente.diaCobro}
               </span>
               
-              {/* BOTONES DE WHATSAPP INTEGRADOS AQUÍ */}
               {cliente.telefono && (
                 <div className="flex gap-2">
-                  <button 
-                    onClick={abrirWhatsApp}
-                    title="Abrir chat de WhatsApp"
-                    className="bg-green-50 text-green-600 hover:bg-green-500 hover:text-white px-4 rounded-lg border border-green-200 text-xs font-black uppercase flex items-center gap-2 transition-all h-8"
-                  >
+                  <button onClick={abrirWhatsApp} className="bg-green-50 text-green-600 hover:bg-green-500 hover:text-white px-4 rounded-lg border border-green-200 text-xs font-black uppercase flex items-center gap-2 transition-all h-8">
                     <span className="text-sm">💬</span> Chat
                   </button>
-                  <button 
-                    onClick={enviarRecordatorioPago}
-                    title="Enviar recordatorio de saldo pendiente"
-                    className="bg-orange-50 text-orange-600 hover:bg-orange-500 hover:text-white px-4 rounded-lg border border-orange-200 text-xs font-black uppercase flex items-center gap-2 transition-all h-8"
-                  >
+                  <button onClick={enviarRecordatorioPago} className="bg-orange-50 text-orange-600 hover:bg-orange-500 hover:text-white px-4 rounded-lg border border-orange-200 text-xs font-black uppercase flex items-center gap-2 transition-all h-8">
                     <span className="text-sm">🔔</span> Cobrar
                   </button>
                 </div>
@@ -188,8 +193,20 @@ const DetalleCliente = () => {
             </div>
           </div>
 
-          <div className="flex flex-col gap-2 w-full md:w-auto">
-            <button onClick={abrirModalPago} className="bg-green-500 text-white px-6 py-4 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-green-600 shadow-lg shadow-green-200 transition-all text-center">
+          <div className="flex flex-col w-full md:w-auto">
+            {/* 🟢 NUEVO: TARJETAS DE BALANCE */}
+            <div className="flex gap-3 mb-4">
+              <div className="bg-red-50 border border-red-100 p-3 rounded-2xl flex-1 flex flex-col justify-center items-center min-w-[120px]">
+                <span className="text-[9px] font-black text-red-500 uppercase tracking-wider mb-1">Deuda Total</span>
+                <span className="text-xl font-black text-red-700">${deudaTotal.toFixed(2)}</span>
+              </div>
+              <div className="bg-blue-50 border border-blue-100 p-3 rounded-2xl flex-1 flex flex-col justify-center items-center min-w-[120px]">
+                <span className="text-[9px] font-black text-blue-500 uppercase tracking-wider mb-1">Saldo a Favor</span>
+                <span className="text-xl font-black text-blue-700">${saldoAFavor.toFixed(2)}</span>
+              </div>
+            </div>
+
+            <button onClick={abrirModalPago} className="w-full bg-green-500 text-white px-6 py-4 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-green-600 shadow-lg shadow-green-200 transition-all text-center">
               💳 Registrar Pago Directo
             </button>
           </div>
@@ -211,7 +228,8 @@ const DetalleCliente = () => {
                   <p className="text-lg font-black text-slate-800">${servicioPrincipal.precio}</p>
                 </div>
                 
-                <button onClick={() => generarFactura(servicioPrincipal.id, servicioPrincipal.precio)} className="w-full mt-4 bg-white border-2 border-slate-200 text-slate-600 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest hover:border-blue-500 hover:text-blue-500 transition-all">
+                {/* 🟢 NUEVO: BOTÓN QUE ABRE EL MODAL DE FACTURA */}
+                <button onClick={abrirModalFactura} className="w-full mt-4 bg-white border-2 border-slate-200 text-slate-600 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest hover:border-blue-500 hover:text-blue-500 transition-all">
                   + Generar Factura Manual
                 </button>
               </div>
@@ -252,19 +270,11 @@ const DetalleCliente = () => {
                         
                         <div className="flex gap-2 w-full sm:w-auto">
                           {!estaPagada && (
-                            <button 
-                              onClick={() => marcarComoPagada(idFact)}
-                              disabled={!idFact}
-                              className="flex-1 sm:flex-none bg-green-500 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase hover:bg-green-600 transition-all disabled:opacity-50"
-                            >
+                            <button onClick={() => marcarComoPagada(idFact)} disabled={!idFact} className="flex-1 sm:flex-none bg-green-500 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase hover:bg-green-600 transition-all disabled:opacity-50">
                               Marcar Pagada
                             </button>
                           )}
-                          <button 
-                            onClick={() => descargarRecibo(idFact)}
-                            disabled={!idFact}
-                            className="flex-1 sm:flex-none bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-xl text-[10px] font-black uppercase hover:bg-slate-100 transition-all disabled:opacity-50 flex items-center justify-center gap-1"
-                          >
+                          <button onClick={() => descargarRecibo(idFact)} disabled={!idFact} className="flex-1 sm:flex-none bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-xl text-[10px] font-black uppercase hover:bg-slate-100 transition-all disabled:opacity-50 flex items-center justify-center gap-1">
                             📄 PDF
                           </button>
                         </div>
@@ -327,7 +337,7 @@ const DetalleCliente = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-[10px] font-black text-slate-400 ml-4 mb-1 block uppercase">Mes a saldar</label>
-                  <input required type="text" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold" value={pagoData.mesCorrespondiente} onChange={e => setPagoData({...pagoData, mesCorrespondiente: e.target.value})} />
+                  <input type="text" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold" placeholder="Ej. Abril 2026" value={pagoData.mesCorrespondiente} onChange={e => setPagoData({...pagoData, mesCorrespondiente: e.target.value})} />
                 </div>
                 <div>
                   <label className="text-[10px] font-black text-slate-400 ml-4 mb-1 block uppercase">Método</label>
@@ -341,12 +351,44 @@ const DetalleCliente = () => {
 
               <div>
                 <label className="text-[10px] font-black text-slate-400 ml-4 mb-1 block uppercase">Notas (Opcional)</label>
-                <input type="text" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold" placeholder="Ej. Dejó $50 a cuenta" value={pagoData.notas} onChange={e => setPagoData({...pagoData, notas: e.target.value})} />
+                <input type="text" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold" placeholder="Ej. Dejó saldo a cuenta" value={pagoData.notas} onChange={e => setPagoData({...pagoData, notas: e.target.value})} />
               </div>
 
               <div className="flex gap-4 mt-6">
                 <button type="button" onClick={() => setShowModalPago(false)} className="flex-1 p-4 rounded-2xl font-black text-xs uppercase tracking-widest text-slate-500 bg-slate-100 hover:bg-slate-200 transition-all">Cancelar</button>
                 <button type="submit" className="flex-1 p-4 rounded-2xl font-black text-xs uppercase tracking-widest text-white bg-green-500 hover:bg-green-600 shadow-lg shadow-green-200 transition-all">Confirmar Pago</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 🟢 NUEVO: MODAL DE FACTURA MANUAL */}
+      {showModalFactura && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-8 shadow-2xl animate-in fade-in zoom-in duration-200">
+            <h3 className="text-xl font-black text-slate-800 mb-1">Generar Factura</h3>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-6">
+              Servicio: <span className="text-blue-500">{servicioPrincipal?.plan}</span>
+            </p>
+
+            <form onSubmit={handleGenerarFactura} className="space-y-4">
+              <div>
+                <label className="text-[10px] font-black text-slate-400 ml-4 mb-1 block uppercase">Monto de la Factura ($)</label>
+                <input 
+                  required 
+                  type="number" 
+                  step="any" 
+                  className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-xl font-black text-slate-800" 
+                  value={facturaData.monto} 
+                  onChange={e => setFacturaData({...facturaData, monto: e.target.value})} 
+                />
+                <p className="text-[9px] text-slate-400 mt-2 ml-2 font-bold">Por defecto se sugiere el costo de la mensualidad, pero puedes modificarlo.</p>
+              </div>
+
+              <div className="flex gap-4 mt-6">
+                <button type="button" onClick={() => setShowModalFactura(false)} className="flex-1 p-4 rounded-2xl font-black text-xs uppercase tracking-widest text-slate-500 bg-slate-100 hover:bg-slate-200 transition-all">Cancelar</button>
+                <button type="submit" className="flex-1 p-4 rounded-2xl font-black text-xs uppercase tracking-widest text-white bg-blue-500 hover:bg-blue-600 shadow-lg shadow-blue-200 transition-all">Generar</button>
               </div>
             </form>
           </div>

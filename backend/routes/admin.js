@@ -81,131 +81,66 @@ router.patch('/servicio/:id/estatus', verificarToken, async (req, res) => {
   }
 });
 
-// POST /api/admin/registrar-cliente
-router.post('/registrar-cliente', verificarToken, async (req, res) => { // Quité esAdmin temporalmente si no lo importaste, si lo usas ponlo de nuevo
-  // 👈 CAMBIO: Recibimos paqueteId en lugar de plan y precio manuales
-  const { email, password, nombre, numCliente, paqueteId, ip, torreId, direccion, latitud, longitud, telefono } = req.body;
-
-  try {
-    // 👈 NUEVO: Buscamos el paquete en la BD para sacar su nombre y precio
-    let nombrePlan = "Sin Plan";
-    let precioPlan = 0;
-    
-    if (paqueteId) {
-      const paqueteInfo = await prisma.paquete.findUnique({ where: { id: paqueteId } });
-      if (paqueteInfo) {
-        nombrePlan = paqueteInfo.nombre;
-        precioPlan = paqueteInfo.precio;
-      }
-    }
-
-    const resultado = await prisma.$transaction(async (tx) => {
-      const usuario = await tx.usuario.create({
-        data: { email, password, rol: 'CLIENTE' }
-      });
-
-      const cliente = await tx.cliente.create({
-        data: {
-          nombre,
-          numCliente,
-          usuarioId: usuario.id,
-          paquete: paqueteId ? { id: paqueteId } : undefined, // Relación con el paquete
-          torre: torreId ? { connect: { id: parseInt(torreId) } } : undefined,
-          direccion: direccion || null,
-          latitud: latitud ? parseFloat(latitud) : null,
-          longitud: longitud ? parseFloat(longitud) : null,
-          telefono: telefono || null
-        }
-      });
-
-      const servicio = await tx.servicio.create({
-        data: {
-          plan: nombrePlan,     // 👈 Automático desde el paquete
-          precio: precioPlan,   // 👈 Automático desde el paquete
-          direccionIp: ip,
-          clienteId: cliente.id
-        }
-      });
-
-      return { usuario, cliente, servicio };
-    });
-
-    res.json({ mensaje: 'Cliente registrado con éxito', data: resultado });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Error al registrar cliente' });
-  }
-});
-
-// --- ACTUALIZACIÓN: GENERAR FACTURAS INTELIGENTES ---  ACTUALMENTE ESTA RUTA NO SE USA, PERO SE QUEDA DE MANERA PROVISIONAL.
-router.post('/generar-facturas-mes', verificarToken, async (req, res) => {
-  try {
-    const servicios = await prisma.servicio.findMany({
-      where: { estado: 'ACTIVO' }
-    });
-
-    const hoy = new Date();
-    // Vencimiento: Día 5 del próximo mes
-    const vencimiento = new Date();
-    vencimiento.setDate(vencimiento.getDate() + 5);
-
-    const facturas = await prisma.$transaction(
-      servicios.map((s) => 
-        prisma.factura.create({
-          data: {
-            monto: s.precio, // <--- USA EL PRECIO INDIVIDUAL DE CADA PLAN
-            vencimiento: vencimiento,
-            pagada: false,
-            servicioId: s.id
-          }
-        })
-      )
-    );
-
-    res.json({ mensaje: `Se generaron ${facturas.length} facturas personalizadas.` });
-  } catch (error) {
-    res.status(500).json({ error: 'Error en facturación masiva' });
-  }
-});
-
 // POST /api/admin/servicio/:id/generar-factura
 router.post('/servicio/:id/generar-factura', async (req, res) => {
   const servicioId = parseInt(req.params.id);
-
-  if (isNaN(servicioId)) {
-    return res.status(400).json({ error: 'ID de servicio inválido' });
-  }
+  if (isNaN(servicioId)) return res.status(400).json({ error: 'ID de servicio inválido' });
 
   try {
-    // 1. Buscar el servicio para saber cuánto cobrar
+    // 1. Buscamos el servicio incluyendo al cliente para conocer su saldo actual
     const servicio = await prisma.servicio.findUnique({
-      where: { id: servicioId }
+      where: { id: servicioId },
+      include: { cliente: true } // 💡 Traemos los datos del cliente vinculados
     });
 
-    if (!servicio) {
-      return res.status(404).json({ error: 'Servicio no encontrado' });
+    if (!servicio) return res.status(404).json({ error: 'Servicio no encontrado' });
+
+    const { monto } = req.body;
+    const precioBase = (monto !== undefined && monto !== '') ? parseFloat(monto) : servicio.precio;
+
+    // 2. 🧠 LÓGICA DE DESCUENTO POR SALDO A FAVOR
+    let montoFinalFactura = precioBase;
+    let saldoRestanteCliente = servicio.cliente.saldo || 0;
+    let facturaPagada = false;
+
+    if (saldoRestanteCliente > 0) {
+      if (saldoRestanteCliente >= precioBase) {
+        // El saldo a favor cubre TODA la factura por completo
+        saldoRestanteCliente -= precioBase;
+        montoFinalFactura = 0; // La factura queda en $0
+        facturaPagada = true;  // Se marca como pagada automáticamente
+      } else {
+        // El saldo cubre solo una parte, se descuenta lo que se pueda
+        montoFinalFactura = precioBase - saldoRestanteCliente;
+        saldoRestanteCliente = 0; // El saldo se agota
+      }
     }
 
-    // 2. Calcular la fecha de vencimiento (por ejemplo, 30 días a partir de hoy)
     const fechaVencimiento = new Date();
     fechaVencimiento.setDate(fechaVencimiento.getDate() + 30);
 
-    // 3. Crear la nueva factura en la base de datos
-    const nuevaFactura = await prisma.factura.create({
-      data: {
-        monto: servicio.precio,
-        vencimiento: fechaVencimiento,
-        pagada: false, // Nace como deuda pendiente
-        servicioId: servicio.id
-      }
-    });
+    // 3. 🔒 TRANSACCIÓN: Creamos la factura y actualizamos el saldo del cliente al mismo tiempo
+    const [nuevaFactura] = await prisma.$transaction([
+      prisma.factura.create({
+        data: {
+          monto: montoFinalFactura,
+          vencimiento: fechaVencimiento,
+          pagada: facturaPagada,
+          servicioId: servicio.id
+        }
+      }),
+      prisma.cliente.update({
+        where: { id: servicio.clienteId },
+        data: { saldo: saldoRestanteCliente }
+      })
+    ]);
 
-    console.log(`✅ [Admin] Factura manual generada para el servicio #${servicio.id}`);
+    console.log(`✅ Factura generada por $${montoFinalFactura}. Saldo restante del cliente: $${saldoRestanteCliente}`);
     res.status(200).json({ msg: 'Factura generada exitosamente', factura: nuevaFactura });
 
   } catch (error) {
-    console.error('❌ [Admin Error] Error al generar factura manual:', error);
-    res.status(500).json({ error: 'Error interno del servidor al generar la factura' });
+    console.error('❌ Error al generar factura con saldo:', error);
+    res.status(500).json({ error: 'Error interno del servidor' });
   }
 });
 
@@ -449,15 +384,17 @@ router.put('/torres/:id', verificarToken, async (req, res) => {
 });
 
 // -- RUTAS DE PAGOS--
-//Registrar Nuevo Pago
+// Registrar Nuevo Pago
 router.post('/pagos', async (req, res) => {
   const { clienteId, monto, mesCorrespondiente, metodoPago, notas } = req.body;
 
   try {
-    // 1. Crear el registro del Pago usando Prisma
+    let saldoRestante = parseFloat(monto);
+
+    // 1. Crear el registro del Pago usando Prisma (Historial)
     const nuevoPago = await prisma.pago.create({
       data: {
-        clienteId: parseInt(clienteId), // Asegúrate de que el tipo coincida con tu schema (int o string)
+        clienteId: parseInt(clienteId), 
         monto: parseFloat(monto),
         mesCorrespondiente: mesCorrespondiente || '',
         metodoPago: metodoPago || 'Efectivo',
@@ -465,48 +402,56 @@ router.post('/pagos', async (req, res) => {
       }
     });
 
-    // 2. Buscar facturas pendientes a través de la relación con el Servicio
+    // 2. Buscar facturas pendientes (de la más vieja a la más nueva)
     const facturasPendientes = await prisma.factura.findMany({
       where: {
-        // Le decimos a Prisma: Busca en la tabla relacionada 'servicio' 
-        // aquel que pertenezca a este clienteId
-        servicio: {
-          clienteId: parseInt(clienteId)
-        },
+        servicio: { clienteId: parseInt(clienteId) },
         pagada: false
       },
-      orderBy: {
-        // Usamos 'vencimiento' porque es el campo de fecha que existe en tu tabla
-        vencimiento: 'asc' 
-      }
+      orderBy: { vencimiento: 'asc' }
     });
 
-    let saldoRestante = parseFloat(monto);
-
-    // 3. Ir "pagando" las facturas con el saldo
+    // 3. Ir "pagando" las facturas con el saldo en cascada
     for (const factura of facturasPendientes) {
       if (saldoRestante <= 0) break;
 
       const montoFactura = parseFloat(factura.monto);
 
       if (saldoRestante >= montoFactura) {
-        // El pago cubre toda la factura, la actualizamos en Prisma
+        // El pago cubre toda la factura, la marcamos como pagada
         await prisma.factura.update({
           where: { id: factura.id },
-          data: { 
-            pagada: true,
-            // pagoId: nuevoPago.id // Descomenta esta línea si en tu schema.prisma agregaste una relación entre Pago y Factura
-          }
+          data: { pagada: true }
         });
         saldoRestante -= montoFactura;
       } else {
-        // Si no alcanza a cubrir la factura completa, nos detenemos
+        // PAGO PARCIAL: El dinero no alcanza para toda la factura.
+        // Descontamos lo que quede y nos detenemos.
+        await prisma.factura.update({
+          where: { id: factura.id },
+          data: { monto: montoFactura - saldoRestante }
+        });
+        saldoRestante = 0; // Se agotó el dinero
         break; 
       }
     }
 
+    // 4. 🧠 LÓGICA DE SALDO A FAVOR (WALLET)
+    // Si después de pagar todas las facturas aún sobra dinero, se va al saldo del cliente
+    if (saldoRestante > 0) {
+      await prisma.cliente.update({
+        where: { id: parseInt(clienteId) },
+        data: {
+          saldo: { increment: saldoRestante } // Suma el excedente al saldo actual
+        }
+      });
+      console.log(`💰 Saldo a favor de $${saldoRestante} guardado para el cliente #${clienteId}`);
+    }
+
     res.status(201).json({ 
-      message: "Pago registrado y facturas actualizadas", 
+      message: saldoRestante > 0 
+        ? `Pago registrado. Se guardó un saldo a favor de $${saldoRestante}` 
+        : "Pago registrado y facturas actualizadas", 
       pago: nuevoPago 
     });
 
@@ -640,44 +585,15 @@ router.get('/pago/:id/pdf', verificarToken, async (req, res) => {
   }
 });
 
-// Ruta para obtener el expediente completo del cliente
-router.get('/cliente/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    
-    const cliente = await prisma.cliente.findUnique({
-      where: { id: parseInt(id) },
-      include: {
-        servicios: {
-          include: {
-            facturas: {
-              orderBy: { vencimiento: 'desc' } // <-- CORREGIDO: Tu schema usa 'vencimiento'
-            }
-          }
-        },
-        pagos: {
-          orderBy: { fecha: 'desc' } // <-- CORREGIDO: Tu schema usa 'fecha'
-        }
-      }
-    });
-
-    if (!cliente) {
-      return res.status(404).json({ message: "Cliente no encontrado" });
-    }
-
-    res.json(cliente);
-  } catch (error) {
-    console.error("Error al cargar expediente:", error);
-    res.status(500).json({ message: "Error interno" });
-  }
-});
-
 // Registrar un pago desde el detalle del cliente
 router.post('/cliente/:id/pagar', verificarToken, async (req, res) => {
   try {
     const { id } = req.params;
     const { monto } = req.body;
+    
+    let saldoRestante = Number(monto);
 
+    // 1. Crear el registro del Pago (Historial)
     const nuevoPago = await prisma.pago.create({
       data: {
         monto: Number(monto),
@@ -686,8 +602,58 @@ router.post('/cliente/:id/pagar', verificarToken, async (req, res) => {
       }
     });
 
-    res.json({ message: "Pago registrado con éxito", nuevoPago });
+    // 2. Buscar las facturas pendientes de este cliente específico
+    const facturasPendientes = await prisma.factura.findMany({
+      where: {
+        servicio: { clienteId: parseInt(id) },
+        pagada: false
+      },
+      orderBy: { vencimiento: 'asc' }
+    });
+
+    // 3. Pagar las facturas en cascada
+    for (const factura of facturasPendientes) {
+      if (saldoRestante <= 0) break;
+
+      const montoFactura = parseFloat(factura.monto);
+
+      if (saldoRestante >= montoFactura) {
+        // Alcanza para pagar la factura completa
+        await prisma.factura.update({
+          where: { id: factura.id },
+          data: { pagada: true }
+        });
+        saldoRestante -= montoFactura;
+      } else {
+        // Pago parcial
+        await prisma.factura.update({
+          where: { id: factura.id },
+          data: { monto: montoFactura - saldoRestante }
+        });
+        saldoRestante = 0;
+        break;
+      }
+    }
+
+    // 4. Lógica de saldo a favor (Wallet)
+    if (saldoRestante > 0) {
+      await prisma.cliente.update({
+        where: { id: parseInt(id) },
+        data: {
+          saldo: { increment: saldoRestante }
+        }
+      });
+    }
+
+    res.json({ 
+      message: saldoRestante > 0 
+        ? `Pago registrado y saldo a favor de $${saldoRestante} guardado` 
+        : "Pago registrado y facturas actualizadas con éxito", 
+      nuevoPago 
+    });
+
   } catch (error) {
+    console.error("Error al registrar el pago desde cliente:", error);
     res.status(500).json({ error: "Error al registrar el pago" });
   }
 });
@@ -757,31 +723,6 @@ router.get('/factura/:id/pdf', async (req, res) => {
   } catch (error) {
     console.error("Error al generar PDF:", error);
     res.status(500).send("Error al generar el documento PDF");
-  }
-});
-
-// Ruta para generar una factura manualmente
-router.post('/servicio/:servicioId/generar-factura', async (req, res) => {
-  try {
-    const { servicioId } = req.params;
-    const { monto } = req.body;
-
-    const fechaVencimiento = new Date();
-    fechaVencimiento.setDate(fechaVencimiento.getDate() + 5);
-
-    const nuevaFactura = await prisma.factura.create({
-      data: {
-        servicioId: parseInt(servicioId),
-        monto: parseFloat(monto),
-        vencimiento: fechaVencimiento, // <-- CORREGIDO: Solo enviamos vencimiento
-        pagada: false
-      }
-    });
-
-    res.status(201).json({ message: "Factura generada con éxito", factura: nuevaFactura });
-  } catch (error) {
-    console.error("Error al generar factura manual:", error);
-    res.status(500).json({ message: "Error al generar la factura" });
   }
 });
 
