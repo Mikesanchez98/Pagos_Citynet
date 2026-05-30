@@ -61,8 +61,8 @@ router.post('/crear-checkout', verificarToken, async (req, res) => {
       customer: {
         name: cliente.nombre || "Cliente",
         last_name: "Citynet", // Dato de relleno sugerido para evitar rechazos en Sandbox
-        email: cliente.usuario.email,
-        phone_number: "5555555555" // Dato de relleno sugerido
+        email: "marcoasalzar@citynet.mx",
+        phone_number: cliente.telefono || "" // Dato de relleno sugerido
       },
       send_email: true,
       // Openpay usa una sola URL para redirigir de vuelta a tu sistema

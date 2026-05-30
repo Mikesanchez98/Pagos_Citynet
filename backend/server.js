@@ -21,7 +21,7 @@ console.log("🚩 PASO 3: Pasamos la condicional sin morir"); // <-- RASTREADOR 
 
 const webhook = require('./routes/webhook'); 
 const rutasPagos = require('./routes/pagos'); 
-const iniciarCronFacturacion = require('./cron/facturacion'); 
+//const iniciarCronFacturacion = require('./cron/facturacion'); 
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -57,9 +57,9 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/webhook', webhook);
 app.use('/api/pagos', rutasPagos); 
 app.use('/api/paquetes', paqueteRoutes);
-if (process.env.VERCEL !== '1') {
-  iniciarCronFacturacion(); 
-}
+//if (process.env.VERCEL !== '1') {
+//  iniciarCronFacturacion(); 
+//}
 
 app.listen(PORT, () => {
   console.log(`🚀 Servidor de Citynet en: http://localhost:${PORT}`);

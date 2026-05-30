@@ -3,7 +3,7 @@ const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
 // 🕒 SE EJECUTA TODOS LOS DÍAS A LA MEDIANOCHE (00:00)
-cron.schedule('0 0 * * *', async () => {
+cron.schedule('0 6 * * *', async () => {
   console.log('=== 🤖 INICIANDO TAREAS AUTOMÁTICAS DE MEDIANOCHE ===');
   const hoy = new Date();
   const diaActual = hoy.getDate(); // Te da un número del 1 al 31
