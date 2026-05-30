@@ -15,6 +15,10 @@ const AdminPanel = () => {
   const [paquetesDisponibles, setPaquetesDisponibles] = useState([]);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   
+  // ESTADOS PARA BÚSQUEDA Y FILTROS
+  const [busqueda, setBusqueda] = useState('');
+  const [filtro, setFiltro] = useState('TODOS'); 
+
   // FORMULARIO ACTUALIZADO (Con teléfono)
   const [form, setForm] = useState({
     email: '',
@@ -29,25 +33,24 @@ const AdminPanel = () => {
     latitud: '',
     longitud: '',
     torreId: '',
-    telefono: '' // <-- Agregado
+    telefono: '' 
   });
 
-  // --- NUEVOS ESTADOS PARA EL MODAL DE PAGO ---
+  // ESTADOS PARA EL MODAL DE PAGO
   const [showModalPago, setShowModalPago] = useState(false);
   const [clienteActivo, setClienteActivo] = useState(null);
   const [pagoData, setPagoData] = useState({
     monto: '', mesCorrespondiente: 'Abril 2026', metodoPago: 'Efectivo', notas: ''
   });
 
-  // --- NUEVOS ESTADOS PARA EL MODAL DE FACTURA (Corregido) ---
-const [showModalFactura, setShowModalFactura] = useState(false);
-const [servicioActivoFactura, setServicioActivoFactura] = useState(null);
+  // ESTADOS PARA EL MODAL DE FACTURA
+  const [showModalFactura, setShowModalFactura] = useState(false);
+  const [servicioActivoFactura, setServicioActivoFactura] = useState(null);
 
-// 🟢 Cambia 'datosFactura' por 'facturaData' y 'setDatosFactura' por 'setFacturaData'
-const [facturaData, setFacturaData] = useState({
-  monto: '',
-  concepto: 'Mensualidad de Internet' 
-});
+  const [facturaData, setFacturaData] = useState({
+    monto: '',
+    concepto: 'Mensualidad de Internet' 
+  });
 
   const PLANES_DISPONIBLES = {
     "Fibra 20 Mbps": 550,
@@ -98,8 +101,6 @@ const [facturaData, setFacturaData] = useState({
     }
   };
 
-  // ---FUNCIONES DEL MODAL DE FACTURACION---
-  // Abre el modal y carga los datos previos
   const abrirModalFactura = (servicioId, precioActual, nombreCliente) => {
     setServicioActivoFactura({ id: servicioId, cliente: nombreCliente });
     setFacturaData({
@@ -109,7 +110,6 @@ const [facturaData, setFacturaData] = useState({
     setShowModalFactura(true);
   };
 
-  // Ejecuta la petición al backend cuando se envía el formulario del modal
   const handleGenerarFacturaSubmit = async (e) => {
     e.preventDefault();
     try {
@@ -118,23 +118,21 @@ const [facturaData, setFacturaData] = useState({
         { 
           servicioId: servicioActivoFactura.id, 
           monto: facturaData.monto,
-          concepto: facturaData.concepto // Opcional, si tu backend lo recibe
+          concepto: facturaData.concepto 
         }, 
         { headers: { Authorization: `Bearer ${token}` } }
       );
       alert(`Factura generada con éxito para ${servicioActivoFactura.cliente}`);
       setShowModalFactura(false);
-      obtenerClientes(); // 👈 Refrescamos la tabla para ver la nueva factura
+      obtenerClientes(); 
     } catch (err) { 
       console.error("Error al generar factura:", err);
       alert("Error al generar la factura"); 
     }
   };
 
-  // --- NUEVAS FUNCIONES DE PAGO DIRECTO ---
   const abrirModalPago = (cliente) => {
     setClienteActivo(cliente);
-    // Intentamos sacar el precio de su servicio, o lo dejamos en blanco
     const precioSugerido = cliente.servicios?.[0]?.precio || '';
     setPagoData({
       monto: precioSugerido, 
@@ -162,7 +160,6 @@ const [facturaData, setFacturaData] = useState({
     }
   };
 
-  // --- GESTIÓN DE FACTURAS Y COBROS (ORIGINAL) ---
   const marcarComoPagada = async (id) => {
     if (!window.confirm("¿Marcar esta factura como pagada?")) return;
     try {
@@ -210,7 +207,6 @@ const [facturaData, setFacturaData] = useState({
     } catch (err) { alert("Error al generar facturas masivas"); }
   };
 
-  // --- GESTIÓN DE CLIENTES (ORIGINAL) ---
   const handleGuardar = async (e) => {
     e.preventDefault();
     const token = localStorage.getItem('token');
@@ -234,7 +230,7 @@ const [facturaData, setFacturaData] = useState({
     setForm({ 
       email: '', password: '', nombre: '', numCliente: 'CT-', plan: 'Fibra 20 Mbps', 
       precio: 550, ip: '', diaCobro: 1, direccion: '', latitud: '', longitud: '', torreId: '',
-      telefono: '' // <-- Agregado
+      telefono: '' 
     });
   };
 
@@ -258,9 +254,9 @@ const [facturaData, setFacturaData] = useState({
         latitud: clienteFresco.latitud || '',
         longitud: clienteFresco.longitud || '',
         paqueteId: clienteFresco.paqueteId || '',
-        precio: servicioActual.precio || '', // 👈 Viene de la tabla de servicios
+        precio: servicioActual.precio || '', 
         numCliente: clienteFresco.numCliente || '',
-        ip: servicioActual.direccionIp || '', // 👈 Viene de la tabla de servicios
+        ip: servicioActual.direccionIp || '', 
         diaCobro: clienteFresco.diaCobro || 1,
         telefono: clienteFresco.telefono || '',
         email: clienteFresco.usuario ? clienteFresco.usuario.email : '', 
@@ -296,16 +292,36 @@ const [facturaData, setFacturaData] = useState({
     } catch (err) { alert("Error al cambiar estatus"); }
   };
 
+  // LÓGICA DE FILTRADO Y BÚSQUEDA
+  const clientesFiltrados = clientes?.filter(cliente => {
+    const texto = busqueda.toLowerCase();
+    const coincideTexto = 
+      cliente.nombre?.toLowerCase().includes(texto) || 
+      cliente.numCliente?.toLowerCase().includes(texto);
+
+    if (!coincideTexto) return false;
+
+    const servicioPrincipal = cliente.servicios?.[0];
+    const facturas = servicioPrincipal?.facturas || [];
+    const estadoServicio = servicioPrincipal?.estado || 'SIN SERVICIO';
+    
+    const esDeudor = facturas.some(f => !f.pagada); 
+
+    if (filtro === 'DEUDORES') return esDeudor;
+    if (filtro === 'ACTIVOS') return estadoServicio === 'ACTIVO';
+    if (filtro === 'SUSPENDIDOS') return estadoServicio === 'SUSPENDIDO';
+    
+    return true; 
+  }) || [];
+
   if (loading) return <div className="p-10 text-center font-bold text-slate-500 uppercase tracking-widest">Cargando Sistema...</div>;
 
   return (
     <div className="min-h-screen bg-slate-50 pb-20 font-sans relative">
       
-      {/* NAVBAR OSCURO RESPONSIVO */}
+      {/* NAVBAR */}
       <nav className="bg-slate-900 text-white shadow-xl sticky top-0 z-50">
         <div className="flex justify-between items-center p-4 px-8">
-          
-          {/* LOGO Y TÍTULO */}
           <div className="flex items-center gap-4">
             <img src={logoCitynet} alt="Logo" className="h-10 brightness-0 invert" />
             <span className="text-[10px] font-black tracking-[0.3em] text-blue-400 border-l border-slate-700 pl-4 uppercase">
@@ -313,25 +329,18 @@ const [facturaData, setFacturaData] = useState({
             </span>
           </div>
 
-          {/* BOTÓN DE HAMBURGUESA (SOLO VISIBLE EN MÓVIL) */}
           <div className="md:hidden">
-            <button 
-              onClick={() => setIsMenuOpen(!isMenuOpen)} 
-              className="text-slate-400 hover:text-white focus:outline-none transition-colors"
-            >
+            <button onClick={() => setIsMenuOpen(!isMenuOpen)} className="text-slate-400 hover:text-white focus:outline-none transition-colors">
               <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 {isMenuOpen ? (
-                  // Ícono de "X" cuando el menú está abierto
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 ) : (
-                  // Ícono de "Hamburguesa" cuando el menú está cerrado
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
                 )}
               </svg>
             </button>
           </div>
 
-          {/* MENÚ DE ESCRITORIO (OCULTO EN MÓVIL, VISIBLE EN PANTALLAS MEDIANAS/GRANDES) */}
           <div className="hidden md:flex gap-4">
             <button onClick={() => navigate('/admin/cobranza')} className="text-[10px] font-black px-4 py-2 rounded-xl border border-orange-500/30 text-orange-500 hover:bg-orange-500 hover:text-white transition-all uppercase">Gestor de Cobranza</button>
             <button onClick={() => navigate('/admin/mapa')} className="text-[10px] font-black px-4 py-2 rounded-xl border border-green-500/30 text-green-500 hover:bg-green-500 hover:text-white transition-all uppercase">Ver Mapa</button>
@@ -342,7 +351,6 @@ const [facturaData, setFacturaData] = useState({
           </div>
         </div>
 
-        {/* MENÚ DESPLEGABLE PARA CELULARES */}
         {isMenuOpen && (
           <div className="md:hidden bg-slate-800 border-t border-slate-700 px-4 pt-2 pb-4 space-y-3 shadow-inner animate-in slide-in-from-top-2 duration-200">
             <button onClick={() => { setIsMenuOpen(false); navigate('/admin/cobranza'); }} className="block w-full text-left text-[11px] font-black px-4 py-3 rounded-xl border border-orange-500/30 text-orange-500 hover:bg-orange-500 hover:text-white transition-all uppercase">Gestor de Cobranza</button>
@@ -384,10 +392,7 @@ const [facturaData, setFacturaData] = useState({
                   value={form.paqueteId || ''} 
                   onChange={(e) => {
                     const idSeleccionado = e.target.value;
-                    // Buscamos el paquete completo en la lista usando su ID
                     const paqueteEncontrado = paquetesDisponibles.find(p => p.id === idSeleccionado);
-                    
-                    // Actualizamos el formulario con el ID y rellenamos el precio automáticamente
                     setForm({
                       ...form, 
                       paqueteId: idSeleccionado, 
@@ -404,8 +409,7 @@ const [facturaData, setFacturaData] = useState({
                 </select>
 
                 <input 
-                  required 
-                  disabled // 👈 Bloquea el campo para evitar errores de dedo
+                  required disabled
                   type="number" 
                   className="w-full p-4 bg-slate-200 border border-slate-300 rounded-2xl text-sm font-bold text-slate-500 cursor-not-allowed transition-all" 
                   placeholder="Precio automático" 
@@ -425,7 +429,6 @@ const [facturaData, setFacturaData] = useState({
                 </select>
               </div>
 
-              {/* Campo para el Teléfono CORREGIDO */}
               <div className="flex flex-col gap-2">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">
                   Teléfono (WhatsApp)
@@ -462,6 +465,37 @@ const [facturaData, setFacturaData] = useState({
             </div>
           </div>
 
+          {/* 🟢 BARRA DE BÚSQUEDA Y FILTROS MOVIDA AQUÍ 🟢 */}
+          <div className="flex flex-col md:flex-row gap-4 justify-between items-center mb-6 z-10 relative">
+            <div className="relative w-full md:w-1/2">
+              <span className="absolute inset-y-0 left-0 flex items-center pl-5 text-slate-400 text-lg">🔍</span>
+              <input
+                type="text"
+                placeholder="Buscar cliente..."
+                className="w-full py-4 pl-14 pr-4 bg-white border border-slate-200 rounded-[2rem] text-sm font-bold text-slate-700 shadow-sm focus:outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100 transition-all"
+                value={busqueda}
+                onChange={(e) => setBusqueda(e.target.value)}
+              />
+            </div>
+
+            <div className="flex gap-2 w-full md:w-auto overflow-x-auto pb-2 md:pb-0 scrollbar-hide">
+              {['TODOS', 'DEUDORES', 'ACTIVOS', 'SUSPENDIDOS'].map(tipo => (
+                <button
+                  key={tipo}
+                  onClick={() => setFiltro(tipo)}
+                  className={`px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest whitespace-nowrap transition-all ${
+                    filtro === tipo 
+                      ? 'bg-blue-500 text-white shadow-lg shadow-blue-200 border-transparent' 
+                      : 'bg-white border border-slate-200 text-slate-500 hover:bg-slate-50'
+                  }`}
+                >
+                  {tipo}
+                </button>
+              ))}
+            </div>
+          </div>
+          {/* -------------------------------------------------- */}
+
           <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden">
             <table className="w-full text-left">
               <thead className="bg-slate-50/50 border-b border-slate-100">
@@ -472,7 +506,7 @@ const [facturaData, setFacturaData] = useState({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {clientes.map(c => (
+                {clientesFiltrados.map(c => (
                   <tr key={c.id} className="hover:bg-slate-50/30 transition-colors">
                     <td className="p-6">
                       <p className="font-black text-slate-800 text-base">{c.nombre}</p>
@@ -504,7 +538,6 @@ const [facturaData, setFacturaData] = useState({
                         
                         {c.servicios?.[0] && (
                           <button 
-                            // 🟢 AQUÍ ESTÁ EL CAMBIO: Llamamos al nuevo modal y le pasamos el nombre del cliente
                             onClick={() => abrirModalFactura(c.servicios?.[0]?.id, c.servicios?.[0]?.precio, c.nombre)} 
                             className="mt-1 text-[10px] font-black text-slate-500 hover:text-blue-600 border border-slate-200 hover:border-blue-200 bg-white hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-all flex items-center gap-1 uppercase"
                           >
@@ -516,23 +549,18 @@ const [facturaData, setFacturaData] = useState({
 
                     <td className="p-6 text-right">
                       <div className="flex justify-end gap-2 items-center flex-wrap">
-                        
-                        {/* BOTÓN DE COBRAR */}
                         <button onClick={() => abrirModalPago(c)} className="bg-green-50 p-3 rounded-2xl hover:bg-green-500 transition-colors group border border-green-100">
                            <span className="text-[10px] font-black text-green-600 group-hover:text-white uppercase">💳 Cobrar</span>
                         </button>
 
-                        {/* NUEVO BOTÓN DE EXPEDIENTE AÑADIDO AQUÍ */}
                         <button onClick={() => navigate(`/admin/cliente/${c.id}`)} className="bg-blue-50 p-3 rounded-2xl hover:bg-blue-500 transition-colors group border border-blue-100">
                            <span className="text-[10px] font-black text-blue-500 group-hover:text-white uppercase">👁️ Expediente</span>
                         </button>
 
-                        {/* BOTÓN DE EDITAR */}
                         <button onClick={() => prepararEdicion(c)} className="bg-slate-100 p-3 rounded-2xl hover:bg-blue-50 transition-colors group">
                            <span className="text-[10px] font-black text-slate-400 group-hover:text-blue-500 uppercase">Editar</span>
                         </button>
                         
-                        {/* BOTÓN DE ESTATUS */}
                         <button 
                           onClick={() => toggleEstatus(c.servicios?.[0]?.id, c.servicios?.[0]?.estado)}
                           className={`px-4 py-2 rounded-2xl text-[10px] font-black uppercase transition-all ${
@@ -543,7 +571,6 @@ const [facturaData, setFacturaData] = useState({
                           {c.servicios?.[0]?.estado}
                         </button>
 
-                        {/* BOTÓN DE BORRAR */}
                         <button onClick={() => eliminarCliente(c.id)} className="bg-red-50 p-3 rounded-2xl hover:bg-red-500 transition-colors group border border-red-100">
                            <span className="text-[10px] font-black text-red-400 group-hover:text-white uppercase">Borrar</span>
                         </button>
@@ -555,10 +582,9 @@ const [facturaData, setFacturaData] = useState({
             </table>
           </div>
         </div>
-
       </div>
 
-      {/* --- NUEVO MODAL DE PAGO (OVERLAY FLOTANTE) --- */}
+      {/* MODAL DE PAGO */}
       {showModalPago && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-md rounded-[2.5rem] p-8 shadow-2xl animate-in fade-in zoom-in duration-200">
@@ -583,71 +609,47 @@ const [facturaData, setFacturaData] = useState({
                   <select className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold text-slate-600" value={pagoData.metodoPago} onChange={e => setPagoData({...pagoData, metodoPago: e.target.value})}>
                     <option value="Efectivo">Efectivo</option>
                     <option value="Transferencia">Transferencia</option>
-                    <option value="Tarjeta">Tarjeta</option>
                   </select>
                 </div>
               </div>
 
               <div>
                 <label className="text-[10px] font-black text-slate-400 ml-4 mb-1 block uppercase">Notas (Opcional)</label>
-                <input type="text" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold" placeholder="Ej. Dejó $50 a cuenta" value={pagoData.notas} onChange={e => setPagoData({...pagoData, notas: e.target.value})} />
+                <textarea className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold" rows="2" value={pagoData.notas} onChange={e => setPagoData({...pagoData, notas: e.target.value})}></textarea>
               </div>
 
-              <div className="flex gap-4 mt-6">
-                <button type="button" onClick={() => setShowModalPago(false)} className="flex-1 p-4 rounded-2xl font-black text-xs uppercase tracking-widest text-slate-500 bg-slate-100 hover:bg-slate-200 transition-all">Cancelar</button>
-                <button type="submit" className="flex-1 p-4 rounded-2xl font-black text-xs uppercase tracking-widest text-white bg-green-500 hover:bg-green-600 shadow-lg shadow-green-200 transition-all">Confirmar Pago</button>
+              <div className="mt-6 flex gap-2">
+                <button type="submit" className="w-full bg-green-500 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-green-600 transition-all">Registrar Pago</button>
+                <button type="button" onClick={() => setShowModalPago(false)} className="w-full bg-slate-100 text-slate-500 py-4 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-200 transition-all">Cancelar</button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* --- MODAL GENERAR FACTURA --- */}
+      {/* MODAL DE FACTURA */}
       {showModalFactura && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-2xl shadow-xl w-96">
-            <h3 className="text-xl font-bold mb-4">Generar Factura</h3>
-            <p className="text-sm text-slate-600 mb-4">
-              Cliente: <span className="font-bold">{servicioActivoFactura?.cliente}</span>
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-md rounded-[2.5rem] p-8 shadow-2xl animate-in fade-in zoom-in duration-200">
+            <h3 className="text-xl font-black text-slate-800 mb-1">Generar Cobro Manual</h3>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-6">
+              Cliente: <span className="text-blue-500">{servicioActivoFactura?.cliente}</span>
             </p>
 
-            <form onSubmit={handleGenerarFacturaSubmit}>
-              <div className="mb-4">
-                <label className="block text-sm font-bold text-slate-700 mb-2">Concepto</label>
-                <input 
-                  type="text" 
-                  required 
-                  className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl"
-                  value={facturaData.concepto} // 👈 Asegúrate que diga facturaData
-                  onChange={(e) => setFacturaData({...facturaData, concepto: e.target.value})} 
-                />
+            <form onSubmit={handleGenerarFacturaSubmit} className="space-y-4">
+              <div>
+                <label className="text-[10px] font-black text-slate-400 ml-4 mb-1 block uppercase">Monto de la Factura ($)</label>
+                <input required type="number" step="any" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-xl font-black text-slate-800" value={facturaData.monto} onChange={e => setFacturaData({...facturaData, monto: e.target.value})} />
               </div>
 
-              <div className="mb-6">
-                <label className="block text-sm font-bold text-slate-700 mb-2">Monto a Cobrar ($)</label>
-                <input 
-                  type="number" 
-                  required 
-                  className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl"
-                  value={facturaData.monto} // 👈 Asegúrate que diga facturaData
-                  onChange={(e) => setFacturaData({...facturaData, monto: parseFloat(e.target.value)})} 
-                />
+              <div>
+                <label className="text-[10px] font-black text-slate-400 ml-4 mb-1 block uppercase">Concepto</label>
+                <input required type="text" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold" value={facturaData.concepto} onChange={e => setFacturaData({...facturaData, concepto: e.target.value})} />
               </div>
 
-              <div className="flex justify-end gap-3">
-                <button 
-                  type="button" 
-                  onClick={() => setShowModalFactura(false)}
-                  className="px-4 py-2 text-slate-600 font-bold bg-slate-100 rounded-xl hover:bg-slate-200"
-                >
-                  Cancelar
-                </button>
-                <button 
-                  type="submit" 
-                  className="px-4 py-2 text-white font-bold bg-blue-600 rounded-xl hover:bg-blue-700"
-                >
-                  Generar Factura
-                </button>
+              <div className="mt-6 flex gap-2">
+                <button type="submit" className="w-full bg-blue-500 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-blue-600 transition-all">Generar Cobro</button>
+                <button type="button" onClick={() => setShowModalFactura(false)} className="w-full bg-slate-100 text-slate-500 py-4 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-200 transition-all">Cancelar</button>
               </div>
             </form>
           </div>
