@@ -38,6 +38,9 @@ model Cliente {
 
   pagos         Pago[]
   tickets       Ticket[]
+
+  paqueteId     String?
+  paquete       Paquete?  @relation(fields: [paqueteId], references: [id])
 }
 
 model Torre {
@@ -93,4 +96,17 @@ model Ticket{
   // Relación con Cliente
   clienteId   Int
   cliente     Cliente  @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+}
+
+model Paquete{
+  id          String   @id @default(uuid())
+  nombre      String  
+  velocidad   Int
+  precio      Float
+  descripcion String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  //En caso de que algun paquete se vinculen clientes a los paquetes
+  clientes    Cliente[]
 }

@@ -11,6 +11,7 @@ import MapaPanel from './pages/MapaPanel';
 import Logistica from './pages/Logistica';
 import DetalleCliente from './pages/DetalleCliente';
 import CobranzaMasiva from './pages/CobranzaMasiva';
+import Paquetes from './pages/Paquetes';
 
 function App() {
   return (
@@ -27,6 +28,7 @@ function App() {
         <Route path="/admin/logistica" element={<Logistica />} />
         <Route path="/admin/cliente/:id" element={<DetalleCliente />} />
         <Route path="/admin/cobranza" element={<CobranzaMasiva />} />
+        <Route path="/admin/paquetes" element={<Paquetes />} />
         <Route path="*" element={<Login />} />
       </Routes>
     </Router>

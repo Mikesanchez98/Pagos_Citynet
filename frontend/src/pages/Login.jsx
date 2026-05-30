@@ -63,12 +63,12 @@ const Login = () => {
           )}
 
           <div>
-            <label className="block text-xs font-bold text-slate-500 uppercase mb-2 ml-1">Correo electrónico o número de cliente</label>
+            <label className="block text-xs font-bold text-slate-500 uppercase mb-2 ml-1">Nombre de usuario o número de cliente</label>
             <input 
               type="text" 
               required
               className="w-full p-4 rounded-xl border border-slate-200 focus:ring-2 focus:ring-primary outline-none transition-all"
-              placeholder="ej. cliente@citynet.com o CT-1001"
+              placeholder="ej. JRuiz o CT-1001"
               value={identifier}
               onChange={(e) => setIdentifier(e.target.value)}
             />

@@ -9,6 +9,7 @@ console.log("🚩 PASO 1: Variables de entorno cargadas con éxito"); // <-- RAS
 const authRoutes = require('./routes/auth');
 const clienteRoutes = require('./routes/cliente');
 const adminRoutes = require('./routes/admin');
+const paqueteRoutes = require('./routes/paquete');
 
 console.log("🚩 PASO 2: Llegamos justo antes de la condicional de Vercel"); // <-- RASTREADOR 2
 
@@ -55,7 +56,7 @@ app.use('/api/cliente', clienteRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/webhook', webhook);
 app.use('/api/pagos', rutasPagos); 
-
+app.use('/api/paquetes', paqueteRoutes);
 if (process.env.VERCEL !== '1') {
   iniciarCronFacturacion(); 
 }

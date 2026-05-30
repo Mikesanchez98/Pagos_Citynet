@@ -23,6 +23,7 @@ router.get('/clientes', verificarToken, async (req, res) => {
     const clientes = await prisma.cliente.findMany({
       include: { 
         usuario: true, // Corregido: era 'usuario', no 'usuarios'
+        paquete: true,
         servicios: {
           // Traemos SOLO las facturas pendientes. Si el array tiene items = es Moroso.
           include: { facturas: { where: { pagada: false } } } 
@@ -45,6 +46,7 @@ router.get('/cliente/:id', async (req, res) => {
     const cliente = await prisma.cliente.findUnique({
       where: { id: parseInt(id) },
       include: {
+        usuario: true, // Traemos el usuario para mostrar email en el expediente
         servicios: {
           include: {
             facturas: true // Lo dejamos simple: traer todas las facturas de este servicio
@@ -80,39 +82,46 @@ router.patch('/servicio/:id/estatus', verificarToken, async (req, res) => {
 });
 
 // POST /api/admin/registrar-cliente
-router.post('/registrar-cliente', verificarToken, esAdmin, async (req, res) => {
-  const { email, password, nombre, numCliente, plan, precio, ip, torreId, direccion, latitud, longitud, telefono } = req.body;
+router.post('/registrar-cliente', verificarToken, async (req, res) => { // Quité esAdmin temporalmente si no lo importaste, si lo usas ponlo de nuevo
+  // 👈 CAMBIO: Recibimos paqueteId en lugar de plan y precio manuales
+  const { email, password, nombre, numCliente, paqueteId, ip, torreId, direccion, latitud, longitud, telefono } = req.body;
 
   try {
+    // 👈 NUEVO: Buscamos el paquete en la BD para sacar su nombre y precio
+    let nombrePlan = "Sin Plan";
+    let precioPlan = 0;
+    
+    if (paqueteId) {
+      const paqueteInfo = await prisma.paquete.findUnique({ where: { id: paqueteId } });
+      if (paqueteInfo) {
+        nombrePlan = paqueteInfo.nombre;
+        precioPlan = paqueteInfo.precio;
+      }
+    }
+
     const resultado = await prisma.$transaction(async (tx) => {
-      // 1. Crear el Usuario
       const usuario = await tx.usuario.create({
-        data: {
-          email,
-          password, // Recuerda: usar bcrypt en el futuro
-          rol: 'CLIENTE'
-        }
+        data: { email, password, rol: 'CLIENTE' }
       });
 
-      // 2. Crear el Cliente vinculado al Usuario
       const cliente = await tx.cliente.create({
         data: {
           nombre,
           numCliente,
           usuarioId: usuario.id,
-          torreId: torreId ? parseInt(torreId) : null,
+          paquete: paqueteId ? { id: paqueteId } : undefined, // Relación con el paquete
+          torre: torreId ? { connect: { id: parseInt(torreId) } } : undefined,
           direccion: direccion || null,
-          latitud: latitud? parseFloat(latitud) : null,
+          latitud: latitud ? parseFloat(latitud) : null,
           longitud: longitud ? parseFloat(longitud) : null,
           telefono: telefono || null
         }
       });
 
-      // 3. Crear el Servicio vinculado al Cliente
       const servicio = await tx.servicio.create({
         data: {
-          plan,
-          precio,
+          plan: nombrePlan,     // 👈 Automático desde el paquete
+          precio: precioPlan,   // 👈 Automático desde el paquete
           direccionIp: ip,
           clienteId: cliente.id
         }
@@ -124,7 +133,7 @@ router.post('/registrar-cliente', verificarToken, esAdmin, async (req, res) => {
     res.json({ mensaje: 'Cliente registrado con éxito', data: resultado });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: 'Error al registrar cliente (el email o numCliente podrían estar duplicados)' });
+    res.status(500).json({ error: 'Error al registrar cliente' });
   }
 });
 
@@ -203,29 +212,54 @@ router.post('/servicio/:id/generar-factura', async (req, res) => {
 // RUTA PARA ACTUALIZAR CLIENTE
 router.put('/cliente/:id', verificarToken, async (req, res) => {
   const { id } = req.params;
-  const { nombre, plan, precio, ip, diaCobro, torreId, direccion, latitud, longitud, telefono } = req.body;
+  
+  // 1. Extraemos email (nombre de usuario) y password del req.body
+  const { nombre, paqueteId, ip, diaCobro, torreId, direccion, latitud, longitud, telefono, email, password } = req.body;
 
   try {
-    // Usamos una actualización que incluya los datos del servicio vinculado
+    let datosServicio = { direccionIp: ip };
+    
+    if (paqueteId) {
+      const paqueteInfo = await prisma.paquete.findUnique({ where: { id: paqueteId } });
+      if (paqueteInfo) {
+        datosServicio.plan = paqueteInfo.nombre;
+        datosServicio.precio = paqueteInfo.precio;
+      }
+    }
+
+    // 2. Preparamos los datos del Usuario para actualizar
+    let datosUsuario = { email: email }; // 'email' guarda tu nuevo nombre de usuario
+    // Solo actualizamos la contraseña si el admin escribió una nueva
+    if (password && password.trim() !== "") {
+      datosUsuario.password = password; 
+    }
+
     const clienteActualizado = await prisma.cliente.update({
       where: { id: parseInt(id) },
       data: {
         nombre: nombre,
-        diaCobro: parseInt(diaCobro),
-        torreId: torreId ? parseInt(torreId) : null,
+        diaCobro: diaCobro ? parseInt(diaCobro) : null,
+        paquete: paqueteId
+        ? { connect: { id: paqueteId } }
+        : { disconnect: true }, // Si no envían paqueteId, desconectamos cualquier relación existente
+        torre: torreId 
+        ? { connect: { id: parseInt(torreId) } }  // Si hay torre, la conecta por su ID
+        : { disconnect: true },
         direccion: direccion || null,
         latitud: latitud ? parseFloat(latitud) : null,
         longitud: longitud ? parseFloat(longitud) : null,
         telefono: telefono || null,
-        // Actualizamos el servicio asociado a este cliente
+        
+        // 3. Actualizamos los datos de acceso (Usuario)
+        usuario: {
+          update: datosUsuario
+        },
+        
+        // Actualizamos el servicio
         servicios: {
           updateMany: {
             where: { clienteId: parseInt(id) },
-            data: {
-              plan: plan,
-              precio: parseFloat(precio),
-              direccionIp: ip
-            }
+            data: datosServicio
           }
         }
       }

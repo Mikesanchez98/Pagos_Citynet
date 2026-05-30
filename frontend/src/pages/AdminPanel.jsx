@@ -12,6 +12,7 @@ const AdminPanel = () => {
   const [status, setStatus] = useState({ msg: '', type: '' });
   const [editandoId, setEditandoId] = useState(null);
   const [torresDisponibles, setTorresDisponibles] = useState([]);
+  const [paquetesDisponibles, setPaquetesDisponibles] = useState([]);
   
   // FORMULARIO ACTUALIZADO (Con teléfono)
   const [form, setForm] = useState({
@@ -19,8 +20,8 @@ const AdminPanel = () => {
     password: '',
     nombre: '',
     numCliente: 'CT-',
-    plan: 'Fibra 20 Mbps',
-    precio: 550,
+    plan: '',
+    precio:0,
     ip: '',
     diaCobro: 1,
     direccion: '',
@@ -46,6 +47,7 @@ const AdminPanel = () => {
 
   useEffect(() => {
     const verificarAcceso = () => {
+      api.get('/paquetes').then(res => setPaquetesDisponibles(res.data)).catch(err => console.error("Error al cargar paquetes para el formulario:", err));
       const user = JSON.parse(localStorage.getItem('user'));
       const token = localStorage.getItem('token');
       if (!token || user?.rol !== 'ADMIN') {
@@ -207,18 +209,18 @@ const AdminPanel = () => {
 
       setForm({
         nombre: clienteFresco.nombre || '',
-        numCliente: clienteFresco.numCliente || 'CT-',
-        email: clienteFresco.usuario?.email || '', 
-        plan: servicioActual.plan || 'Fibra 20 Mbps',
-        precio: servicioActual.precio || 550,
-        ip: servicioActual.direccionIp || '', 
-        diaCobro: clienteFresco.diaCobro || 1, 
-        password: '****',
         direccion: clienteFresco.direccion || '',
+        torreId: clienteFresco.torreId || '',
         latitud: clienteFresco.latitud || '',
         longitud: clienteFresco.longitud || '',
-        torreId: clienteFresco.torreId || '',
-        telefono: clienteFresco.telefono || '' // <-- Agregado
+        paqueteId: clienteFresco.paqueteId || '',
+        precio: servicioActual.precio || '', // 👈 Viene de la tabla de servicios
+        numCliente: clienteFresco.numCliente || '',
+        ip: servicioActual.direccionIp || '', // 👈 Viene de la tabla de servicios
+        diaCobro: clienteFresco.diaCobro || 1,
+        telefono: clienteFresco.telefono || '',
+        email: clienteFresco.usuario ? clienteFresco.usuario.email : '', 
+        password: clienteFresco.usuario ? clienteFresco.usuario.password : ''
       });
 
     } catch (error) {
@@ -266,6 +268,7 @@ const AdminPanel = () => {
           <button onClick={() => navigate('/admin/cobranza')} className="text-[10px] font-black px-4 py-2 rounded-xl border border-orange-500/30 text-orange-500 hover:bg-green-500 hover:text-white transition-all uppercase">Gestor de Cobranza</button>
           <button onClick={() => navigate('/admin/mapa')} className="text-[10px] font-black px-4 py-2 rounded-xl border border-green-500/30 text-green-500 hover:bg-green-500 hover:text-white transition-all uppercase">Ver Mapa</button>
           <button onClick={() => navigate('/admin/torres')} className="text-[10px] font-black px-4 py-2 rounded-xl border border-blue-500/30 text-blue-400 hover:bg-blue-500 hover:text-white transition-all uppercase">Gestionar Torres</button>
+          <button onClick={() => navigate('/admin/paquetes')} className="text-[10px] font-black px-4 py-2 rounded-xl border border-yellow-500/30 text-yellow-500 hover:bg-yellow-500 hover:text-white transition-all uppercase">Gestionar Paquetes</button>
           <button onClick={() => navigate('/admin/logistica')} className="text-[10px] font-black px-4 py-2 rounded-xl border border-purple-500/30 text-purple-500 hover:bg-purple-500 hover:text-white transition-all uppercase">Gestionar Logística</button>
           <button onClick={() => {localStorage.clear(); navigate('/login');}} className="text-[10px] font-black px-4 py-2 rounded-xl border border-red-500/30 text-red-500 hover:bg-red-500 hover:text-white transition-all">SALIR</button>
         </div>
@@ -295,10 +298,38 @@ const AdminPanel = () => {
               </div>
 
               <div className="grid grid-cols-2 gap-4">
-                <select className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-[11px] font-black" value={form.plan} onChange={e => setForm({...form, plan: e.target.value, precio: PLANES_DISPONIBLES[e.target.value] || form.precio})}>
-                  {Object.keys(PLANES_DISPONIBLES).map(p => <option key={p} value={p}>{p}</option>)}
+                <select 
+                  className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-[11px] font-black text-slate-700 cursor-pointer" 
+                  value={form.paqueteId || ''} 
+                  onChange={(e) => {
+                    const idSeleccionado = e.target.value;
+                    // Buscamos el paquete completo en la lista usando su ID
+                    const paqueteEncontrado = paquetesDisponibles.find(p => p.id === idSeleccionado);
+                    
+                    // Actualizamos el formulario con el ID y rellenamos el precio automáticamente
+                    setForm({
+                      ...form, 
+                      paqueteId: idSeleccionado, 
+                      precio: paqueteEncontrado ? paqueteEncontrado.precio : ''
+                    });
+                  }}
+                >
+                  <option value="">-- Selecciona un Plan --</option>
+                  {paquetesDisponibles.map(paquete => (
+                    <option key={paquete.id} value={paquete.id}>
+                      {paquete.nombre} ({paquete.velocidad} Mbps)
+                    </option>
+                  ))}
                 </select>
-                <input required type="number" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold" placeholder="Precio $" value={form.precio} onChange={e => setForm({...form, precio: e.target.value})} />
+
+                <input 
+                  required 
+                  disabled // 👈 Bloquea el campo para evitar errores de dedo
+                  type="number" 
+                  className="w-full p-4 bg-slate-200 border border-slate-300 rounded-2xl text-sm font-bold text-slate-500 cursor-not-allowed transition-all" 
+                  placeholder="Precio automático" 
+                  value={form.precio || ''} 
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -327,9 +358,9 @@ const AdminPanel = () => {
                 />
               </div>
 
-              <input required disabled={editandoId} type="email" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold disabled:opacity-40" placeholder="Correo Electrónico" value={form.email} onChange={e => setForm({...form, email: e.target.value})} />
+              <input required type="text" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold disabled:opacity-40" placeholder="Nombre de Usuario" value={form.email} onChange={e => setForm({...form, email: e.target.value})} />
               
-              {!editandoId && <input required type="text" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold" placeholder="Contraseña Temporal" value={form.password} onChange={e => setForm({...form, password: e.target.value})} />}
+              <input required type="text" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold" placeholder="Contraseña Temporal" value={form.password} onChange={e => setForm({...form, password: e.target.value})} />
               
               <button type="submit" className="w-full bg-slate-900 text-white py-5 rounded-3xl font-black text-sm tracking-widest hover:bg-blue-600 transition-all shadow-lg shadow-slate-200 uppercase">
                 {editandoId ? 'Guardar Cambios' : 'Registrar Cliente'}
