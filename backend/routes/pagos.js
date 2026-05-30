@@ -64,7 +64,7 @@ router.post('/crear-checkout', verificarToken, async (req, res) => {
         email: "marcoasalzar@citynet.mx",
         phone_number: cliente.telefono || "" // Dato de relleno sugerido
       },
-      send_email: true,
+      send_email: false,
       // Openpay usa una sola URL para redirigir de vuelta a tu sistema
       redirect_url: 'http://localhost:3000/dashboard' 
     };
