@@ -6,6 +6,12 @@ const { verificarToken } = require('../middleware/auth');
 const { verificarAdmin } = require('../middleware/auth');
 const { parse } = require('dotenv');
 const PDFDocument = require('pdfkit');
+const multer = require('multer');
+const csv = require('csv-parser');
+const fs = require('fs');
+
+//Configuracion para guardar el archivo temporalmente
+const upload = multer({ dest: 'uploads/' });
 
 const prisma = new PrismaClient();
 
@@ -461,6 +467,52 @@ router.post('/pagos', async (req, res) => {
   }
 });
 
+// ==========================================
+// RUTA CORREGIDA: HISTORIAL DE PAGOS LOGÍSTICA
+// ==========================================
+router.get('/pagos/historial', verificarToken, async (req, res) => {
+  try {
+    const { filtro } = req.query; // Puede ser HOY, SEMANA, MES, TODOS
+    
+    // Configuración de fechas para los filtros
+    const ahora = new Date();
+    let fechaInicio = new Date(0); // Por defecto: desde el inicio de los tiempos (TODOS)
+
+    if (filtro === 'HOY') {
+      fechaInicio = new Date(ahora.setHours(0, 0, 0, 0));
+    } else if (filtro === 'SEMANA') {
+      const diaSemana = ahora.getDay();
+      const diff = ahora.getDate() - diaSemana + (diaSemana === 0 ? -6 : 1); // Ajustar al lunes
+      fechaInicio = new Date(ahora.setDate(diff));
+      fechaInicio.setHours(0, 0, 0, 0);
+    } else if (filtro === 'MES') {
+      fechaInicio = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
+    }
+
+    // Consulta a la base de datos usando Prisma (Corregida con 'fecha')
+    const pagos = await prisma.pago.findMany({
+      where: filtro !== 'TODOS' ? {
+        fecha: { // 🟢 CORREGIDO: Antes decía createdAt
+          gte: fechaInicio
+        }
+      } : {},
+      include: {
+        cliente: {
+          select: { nombre: true }
+        }
+      },
+      orderBy: {
+        fecha: 'desc' // 🟢 CORREGIDO: Antes decía createdAt
+      }
+    });
+
+    res.json(pagos);
+  } catch (error) {
+    console.error("Error al obtener el historial de pagos:", error);
+    res.status(500).json({ error: "Error al cargar los pagos." });
+  }
+});
+
 //Obtener el historial de pagos de un cliente específico
 router.get('/pagos/:clienteId', verificarToken, async (req, res) => {
   const { clienteId } = req.params;
@@ -783,6 +835,214 @@ router.put('/tickets/:id', async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Error al actualizar el ticket" });
+  }
+});
+
+// ==========================================
+// 📥 NUEVA RUTA: IMPORTACIÓN MASIVA DE CSV
+// ==========================================
+router.post('/clientes/importar', verificarToken, upload.single('file'), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'No se subió ningún archivo.' });
+  }
+
+  const resultados = [];
+  
+  // 1. Leer el archivo temporal
+  fs.createReadStream(req.file.path)
+    .pipe(csv())
+    .on('data', (data) => resultados.push(data))
+    .on('end', async () => {
+      try {
+        let creados = 0;
+
+        // 2. Iterar sobre cada fila del Excel/CSV
+        for (const fila of resultados) {
+          const { nombre, direccion, telefono, latitud, longitud, numCliente, ip, diaCobro, email, password, plan_nombre } = fila;
+
+          // Validar si el cliente ya existe para evitar duplicados
+          const clienteExistente = await prisma.cliente.findFirst({
+            where: { numCliente: numCliente }
+          });
+          if (clienteExistente) continue; 
+
+          // Buscar el paquete por nombre exacto en la base de datos
+          const paquete = await prisma.paquete.findFirst({
+            where: { nombre: plan_nombre }
+          });
+          const paqueteId = paquete ? paquete.id : null;
+          const precioPaquete = paquete ? paquete.precio : 0;
+
+          // A) Crear el Usuario para Login
+          const nuevoUsuario = await prisma.usuario.create({
+            data: {
+              email: email || `${numCliente.toLowerCase()}@citynet.com`,
+              password: password || '12345678', // Si usas bcrypt, agrégalo aquí
+              rol: 'CLIENTE'
+            }
+          });
+
+          // B) Crear el Cliente
+          const nuevoCliente = await prisma.cliente.create({
+            data: {
+              nombre: nombre,
+              direccion: direccion || '',
+              telefono: telefono || '',
+              latitud: latitud ? parseFloat(latitud) : null,
+              longitud: longitud ? parseFloat(longitud) : null,
+              numCliente: numCliente,
+              diaCobro: parseInt(diaCobro) || 1,
+              usuarioId: nuevoUsuario.id
+            }
+          });
+
+          // C) Crear el Servicio vinculado al paquete
+          if (paqueteId) {
+            await prisma.servicio.create({
+              data: {
+                clienteId: nuevoCliente.id,
+                paqueteId: paqueteId,
+                precio: precioPaquete,
+                direccionIp: ip || '',
+                estado: 'ACTIVO'
+              }
+            });
+          }
+          creados++;
+        }
+
+        // 3. Eliminar el archivo CSV temporal del servidor
+        fs.unlinkSync(req.file.path);
+
+        res.json({ 
+          mensaje: `¡Importación completada! Se guardaron ${creados} clientes nuevos en la base de datos.` 
+        });
+
+      } catch (error) {
+        console.error("Error en la importación masiva con Prisma:", error);
+        // Limpiar archivo si ocurre un error fatal
+        if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+        res.status(500).json({ error: 'Hubo un error al guardar los clientes en la base de datos.' });
+      }
+    });
+});
+
+// =================================================================
+// MASTER CRON ENDPOINT: GENERACIÓN DE FACTURAS Y SUSPENSIONES
+// =================================================================
+router.get('/cron/procesar-dia', async (req, res) => {
+  // 🔒 SEGURIDAD: Validar que la petición venga exclusivamente de Vercel
+  const authHeader = req.headers.authorization;
+  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    return res.status(401).json({ error: "No autorizado" });
+  }
+
+  console.log('=== 🤖 INICIANDO TAREAS AUTOMÁTICAS DE MEDIANOCHE (VERCEL) ===');
+  
+  // Forzamos que los cálculos de día y mes utilicen la hora local de México 
+  // para evitar desfases si el servidor de Vercel corre en otra región.
+  const fechaMexico = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Mexico_City" }));
+  const diaActual = fechaMexico.getDate(); 
+  
+  const mesActual = fechaMexico.toLocaleString('es-MX', { month: 'long', timeZone: 'America/Mexico_City' }).toUpperCase();
+  const añoActual = fechaMexico.getFullYear();
+  const stringMesCorrespondiente = `${mesActual}-${añoActual}`; // Ej: "MAYO-2026"
+
+  try {
+    let resultadoFacturas = "No correspondía facturación hoy.";
+    let resultadoSuspensiones = "No correspondía aplicar cortes hoy.";
+
+    // -------------------------------------------------------------
+    // TASK 1: GENERACIÓN AUTOMÁTICA DE FACTURAS (Días 1 y 15)
+    // -------------------------------------------------------------
+    if (diaActual === 1 || diaActual === 15) {
+      console.log(`[CRON] Generando facturas automáticas para el Grupo del día ${diaActual}...`);
+      
+      const clientesDelGrupo = await prisma.cliente.findMany({
+        where: { 
+          diaCobro: diaActual,
+          servicio: { estado: 'ACTIVO' } 
+        },
+        include: { servicio: true }
+      });
+
+      let facturasCreadas = 0;
+      for (const cliente of clientesDelGrupo) {
+        const facturaExiste = await prisma.factura.findFirst({
+          where: {
+            clienteId: cliente.id,
+            mes: stringMesCorrespondiente
+          }
+        });
+
+        if (!facturaExiste && cliente.servicio) {
+          await prisma.factura.create({
+            data: {
+              clienteId: cliente.id,
+              monto: cliente.servicio.precio,
+              mes: stringMesCorrespondiente,
+              estado: 'PENDIENTE',
+              fechaEmision: new Date()
+            }
+          });
+          facturasCreadas++;
+        }
+      }
+      resultadoFacturas = `Facturas del Grupo ${diaActual} procesadas. Creadas: ${facturasCreadas}`;
+      console.log(`✅ [CRON] ${resultadoFacturas}`);
+    }
+
+    // -------------------------------------------------------------
+    // TASK 2: SUSPENSIÓN AUTOMÁTICA POR FALTA DE PAGO (Días 5 y 20)
+    // -------------------------------------------------------------
+    const DIAS_DE_CORTE = [5, 20]; 
+
+    if (DIAS_DE_CORTE.includes(diaActual)) {
+      const grupoACortar = diaActual === 5 ? 1 : 15;
+      console.log(`[CRON] Revisando impagos para aplicar suspensiones al Grupo ${grupoACortar}...`);
+
+      const facturasVencidas = await prisma.factura.findMany({
+        where: {
+          mes: stringMesCorrespondiente,
+          estado: 'PENDIENTE',
+          cliente: { diaCobro: grupoACortar }
+        },
+        include: { cliente: { include: { servicio: true } } }
+      });
+
+      let suspendidosContador = 0;
+      
+      if (facturasVencidas.length > 0) {
+        // Mapeamos los IDs de los servicios vinculados a las facturas vencidas
+        const servicioIds = facturasVencidas
+          .filter(f => f.cliente?.servicio?.estado === 'ACTIVO')
+          .map(f => f.cliente.servicio.id);
+
+        if (servicioIds.length > 0) {
+          // Actualización masiva optimizada
+          const suspensiones = await prisma.servicio.updateMany({
+            where: { id: { in: servicioIds } },
+            data: { estado: 'SUSPENDIDO' }
+          });
+          suspendidosContador = suspensiones.count;
+        }
+      }
+      
+      resultadoSuspensiones = `Corte completado para el Grupo ${grupoACortar}. Suspendidos: ${suspendidosContador}`;
+      console.log(`✅ [CRON] ${resultadoSuspensiones}`);
+    }
+
+    // Responder de forma exitosa a Vercel para cerrar la ejecución
+    return res.json({
+      success: true,
+      fechaProcesada: fechaMexico.toISOString(),
+      facturas: resultadoFacturas,
+      suspensiones: resultadoSuspensiones
+    });
+
+  } catch (error) {
+    console.error('❌ [CRON ERROR] Falló la ejecución de tareas:', error);
+    return res.status(500).json({ success: false, error: error.message });
   }
 });
 

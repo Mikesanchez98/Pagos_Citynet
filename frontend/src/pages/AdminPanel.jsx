@@ -292,6 +292,53 @@ const AdminPanel = () => {
     } catch (err) { alert("Error al cambiar estatus"); }
   };
 
+  // 📥 NUEVA FUNCIÓN: IMPORTAR EL ARCHIVO CSV DE CLIENTES
+  const handleImportarCSV = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    // Validación de extensión
+    if (!file.name.endsWith('.csv')) {
+      alert("Por favor, selecciona únicamente archivos con extensión .csv");
+      e.target.value = null;
+      return;
+    }
+
+    if (!window.confirm(`¿Estás seguro de que deseas importar la lista de clientes desde "${file.name}"? Se procesarán todos los registros automáticamente.`)) {
+      e.target.value = null;
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', file); // Asegúrate que en el backend multer busque el campo 'file'
+
+    try {
+      const token = localStorage.getItem('token');
+      // Si usas otro estado de carga o notificación, puedes adaptarlo aquí:
+      if (typeof setStatus === 'function') {
+        setStatus({ msg: 'Procesando e importando clientes, por favor espera...', type: 'info' });
+      }
+      
+      const res = await api.post('/admin/clientes/importar', formData, {
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'multipart/form-data'
+        }
+      });
+
+      alert(res.data.mensaje || "¡Importación masiva completada con éxito!");
+      
+      // Llamamos a tu función original para refrescar la tabla de clientes
+      if (typeof obtenerClientes === 'function') obtenerClientes(); 
+    } catch (err) {
+      console.error("Error al importar lote de clientes:", err);
+      alert(err.response?.data?.error || "Hubo un problema al procesar el archivo CSV. Asegúrate de que las columnas coincidan con la plantilla requerida.");
+    } finally {
+      e.target.value = null; // Limpiamos el input
+      if (typeof setStatus === 'function') setStatus({ msg: '', type: '' });
+    }
+  };
+
   // LÓGICA DE FILTRADO Y BÚSQUEDA
   const clientesFiltrados = clientes?.filter(cliente => {
     const texto = busqueda.toLowerCase();
@@ -457,13 +504,38 @@ const AdminPanel = () => {
         {/* COLUMNA DERECHA: TABLA Y BOTONES MASIVOS */}
         <div className="lg:col-span-8">
           
-          <div className="flex flex-col md:flex-row justify-between items-center bg-white p-4 rounded-[2rem] shadow-sm border border-slate-100 mb-6 px-6">
-            <h3 className="font-black text-slate-800 text-sm tracking-widest uppercase mb-4 md:mb-0">Facturación Masiva</h3>
-            <div className="flex gap-2">
-                <button onClick={() => generarFacturasLote(1)} className="bg-slate-900 text-white px-5 py-3 rounded-xl text-[10px] font-black uppercase hover:bg-blue-600 transition-all shadow-md">Facturar Grupo 1</button>
-                <button onClick={() => generarFacturasLote(15)} className="bg-slate-900 text-white px-5 py-3 rounded-xl text-[10px] font-black uppercase hover:bg-blue-600 transition-all shadow-md">Facturar Grupo 15</button>
+          {/* TARJETA UNIFICADA DE ACCIONES MASIVAS (DISEÑO CORREGIDO) */}
+          <div className="flex flex-col md:flex-row justify-between items-center bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 mb-6 gap-6">
+            
+            {/* Lado Izquierdo: Facturación */}
+            <div className="flex flex-col items-center md:items-start w-full md:w-auto">
+              <h3 className="font-black text-slate-800 text-sm tracking-widest uppercase mb-3">Facturación Masiva</h3>
+              <div className="flex flex-wrap justify-center gap-2">
+                  <button onClick={() => generarFacturasLote(1)} className="bg-slate-900 text-white px-5 py-3 rounded-xl text-[10px] font-black uppercase hover:bg-blue-600 transition-all shadow-md">Facturar Grupo 1</button>
+                  <button onClick={() => generarFacturasLote(15)} className="bg-slate-900 text-white px-5 py-3 rounded-xl text-[10px] font-black uppercase hover:bg-blue-600 transition-all shadow-md">Facturar Grupo 15</button>
+              </div>
             </div>
+
+            {/* Separador Visual */}
+            <div className="hidden md:block w-px h-12 bg-slate-200"></div>
+            <div className="block md:hidden w-full h-px bg-slate-200 my-2"></div>
+
+            {/* Lado Derecho: Importación */}
+            <div className="flex flex-col items-center md:items-end w-full md:w-auto">
+              <h3 className="font-black text-slate-800 text-sm tracking-widest uppercase mb-3">Importar Catálogo</h3>
+              <label className="bg-blue-500 text-white px-5 py-3 rounded-xl text-[10px] font-black uppercase hover:bg-blue-600 transition-all shadow-md cursor-pointer flex items-center gap-2 tracking-wider">
+                <span>📥 IMPORTAR CLIENTES (.CSV)</span>
+                <input 
+                  type="file" 
+                  accept=".csv" 
+                  className="hidden" 
+                  onChange={handleImportarCSV} 
+                />
+              </label>
+            </div>
+            
           </div>
+
 
           {/* 🟢 BARRA DE BÚSQUEDA Y FILTROS MOVIDA AQUÍ 🟢 */}
           <div className="flex flex-col md:flex-row gap-4 justify-between items-center mb-6 z-10 relative">
