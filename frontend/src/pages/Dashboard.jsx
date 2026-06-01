@@ -2,14 +2,14 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import logoCitynet from '../assets/logo-citynet-antiguo.png'; 
-import api from '../api/axios'; // <-- NUEVO: Importación de la instancia de Axios personalizada
-import SoporteCliente from '../pages/SoporteCliente'; // <-- NUEVO: Importación del componente de soporte
+import api from '../api/axios'; 
+import SoporteCliente from '../pages/SoporteCliente'; 
 
 const Dashboard = () => {
   const navigate = useNavigate();
   const [datos, setDatos] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('resumen'); // <-- NUEVO: Estado para controlar las pestañas
+  const [activeTab, setActiveTab] = useState('resumen'); 
 
   useEffect(() => {
     const cargarDatos = async () => {
@@ -69,6 +69,55 @@ const Dashboard = () => {
     }
   };
 
+  // --- ACTUALIZACIÓN DE LA FUNCIÓN DE PDF ---
+  const handleDescargarRecibo = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        alert('Sesión expirada. Por favor, vuelve a iniciar sesión.');
+        return;
+      }
+
+      // Buscamos la factura pendiente si existe, o mandamos el ID necesario
+      const facturaId = datos?.servicios?.[0]?.facturas?.[0]?.id; 
+      
+      if (!facturaId) {
+        alert('No se encontró ninguna factura disponible para descargar.');
+        return;
+      }
+
+      // Hacemos la petición al backend esperando un archivo (blob)
+      const respuesta = await api.get(`/cliente/factura/${facturaId}/pdf`, {
+        headers: { Authorization: `Bearer ${token}` },
+        responseType: 'blob' // CRUCIAL: Le dice a Axios que viene un archivo binario
+      });
+
+      // Crear un enlace temporal en el navegador para forzar la descarga
+      const blob = new Blob([respuesta.data], { type: 'application/pdf' });
+      const urlPdf = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = urlPdf;
+      link.setAttribute('download', `factura-${datos.numCliente}-${facturaId}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      
+      // Limpieza
+      link.parentNode.removeChild(link);
+      window.URL.revokeObjectURL(urlPdf);
+
+    } catch (error) {
+      console.error('Error al descargar el PDF:', error);
+      alert('Hubo un error al generar o descargar tu PDF.');
+    }
+  };
+
+  const obtenerSaludo = () => {
+    const hora = new Date().getHours();
+    if (hora < 12) return 'Buenos días';
+    if (hora < 19) return 'Buenas tardes';
+    return 'Buenas noches';
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
@@ -105,13 +154,39 @@ const Dashboard = () => {
       {/* Contenedor Principal */}
       <div className="max-w-3xl mx-auto px-4 mt-8 space-y-6">
         
-        {/* Saludo y ID de Cliente */}
-        <div>
-          <h1 className="text-3xl font-bold text-slate-800">Hola, {datos?.nombre}</h1>
-          <p className="text-slate-500 text-sm font-medium">Número de Cliente: <span className="text-primary font-bold">{datos?.numCliente}</span></p>
+        {/* Saludo, ID de Cliente e Insignias Forzadas */}
+        <div className="flex flex-col gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-slate-800">{obtenerSaludo()}, {datos?.nombre}</h1>
+            <p className="text-slate-500 text-sm font-medium mt-1">
+              Número de Cliente: <span className="text-primary font-bold">{datos?.numCliente}</span>
+            </p>
+          </div>
+
+          {/* Insignias de información forzadas a mostrarse */}
+          <div className="flex flex-wrap items-center gap-2 mt-2">
+            <div className="flex items-center gap-1.5 bg-slate-200/50 text-slate-600 text-xs px-3 py-1.5 rounded-lg font-medium border border-slate-100">
+              <span>📍</span> 
+              <span className="truncate max-w-[200px] sm:max-w-md">
+                {datos?.direccion ? datos.direccion : 'Dirección no disponible'}
+              </span>
+            </div>
+            
+            <div className="flex items-center gap-1.5 bg-slate-200/50 text-slate-600 text-xs px-3 py-1.5 rounded-lg font-medium border border-slate-100">
+              <span>📱</span> 
+              <span>{datos?.telefono ? datos.telefono : 'Teléfono no registrado'}</span>
+            </div>
+
+            <div className="flex items-center gap-1.5 bg-slate-200/50 text-slate-600 text-xs px-3 py-1.5 rounded-lg font-medium border border-slate-100">
+              <span>📧</span> 
+              <span className="truncate max-w-[150px]">
+                {datos?.correo ? datos.correo : 'Correo no registrado'}
+              </span>
+            </div>
+          </div>
         </div>
 
-        {/* --- NUEVO: SELECTOR DE PESTAÑAS --- */}
+        {/* SELECTOR DE PESTAÑAS */}
         <div className="flex gap-2 bg-slate-200/50 p-1.5 rounded-2xl w-fit mx-auto">
           <button 
             onClick={() => setActiveTab('resumen')}
@@ -126,13 +201,13 @@ const Dashboard = () => {
             🛠️ Soporte Técnico
           </button>
         </div>
-        {/* ----------------------------------- */}
 
         {/* CONTENIDO DINÁMICO SEGÚN LA PESTAÑA */}
         <div className="animate-in fade-in duration-500">
           {activeTab === 'resumen' ? (
             <div className="space-y-6">
-              {/* Tarjeta 1: Estado del Servicio (Técnico) */}
+              
+              {/* Tarjeta 1: Estado del Servicio */}
               <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between">
                 <div>
                   <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-1">Plan Contratado</p>
@@ -193,10 +268,11 @@ const Dashboard = () => {
                 </div>
               </div>
 
-              {/* Historial Rápido */}
+              {/* Historial Rápido y PDF */}
               <div className="pt-2">
                 <h3 className="text-slate-800 font-bold mb-4 ml-1">Estado de Cuenta</h3>
                 <div className={`p-5 rounded-2xl shadow-sm border flex justify-between items-center transition-hover ${datos?.montoPendiente > 0 ? 'bg-white border-slate-100 hover:border-red-200' : 'bg-green-50 border-green-100'}`}>
+                  
                   <div className="flex items-center gap-4">
                     <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xl ${datos?.montoPendiente > 0 ? 'bg-blue-50' : 'bg-green-100'}`}>
                       {datos?.montoPendiente > 0 ? '📄' : '✅'}
@@ -208,21 +284,34 @@ const Dashboard = () => {
                       <p className={`${datos?.montoPendiente > 0 ? 'text-slate-400' : 'text-green-600'} text-xs font-medium`}>Servicio de Internet Fibra</p>
                     </div>
                   </div>
-                  <div className="text-right">
-                      <p className={`font-black ${datos?.montoPendiente > 0 ? 'text-slate-700' : 'text-green-700'}`}>
-                        ${Number(datos?.montoPendiente || 0).toFixed(2)}
-                      </p>
-                      {datos?.montoPendiente > 0 ? (
-                        <p className="text-[10px] text-red-500 font-bold uppercase">Pendiente</p>
-                      ) : (
-                        <p className="text-[10px] text-green-600 font-bold uppercase">Pagado</p>
-                      )}
+                  
+                  <div className="flex items-center gap-5">
+                    <div className="text-right">
+                        <p className={`font-black ${datos?.montoPendiente > 0 ? 'text-slate-700' : 'text-green-700'}`}>
+                          ${Number(datos?.montoPendiente || 0).toFixed(2)}
+                        </p>
+                        {datos?.montoPendiente > 0 ? (
+                          <p className="text-[10px] text-red-500 font-bold uppercase">Pendiente</p>
+                        ) : (
+                          <p className="text-[10px] text-green-600 font-bold uppercase">Pagado</p>
+                        )}
+                    </div>
+                    
+                    <button 
+                      onClick={handleDescargarRecibo}
+                      className="p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-xl transition-colors flex flex-col items-center justify-center gap-0.5 border border-slate-200 shadow-sm"
+                      title="Descargar Recibo en PDF"
+                    >
+                      <span className="text-lg leading-none">📄</span>
+                      <span className="text-[9px] font-bold uppercase tracking-wider">PDF</span>
+                    </button>
                   </div>
+
                 </div>
               </div>
+
             </div>
           ) : (
-            /* --- NUEVO: RENDERIZADO DEL COMPONENTE DE TICKETS --- */
             <div className="animate-in slide-in-from-bottom-4 duration-500">
                <SoporteCliente clienteId={datos?.id} />
             </div>
