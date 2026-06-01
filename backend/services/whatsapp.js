@@ -1,25 +1,35 @@
+// backend/services/whatsapp.js
 const twilio = require('twilio');
 
-// Estas credenciales te las da Twilio al crear tu cuenta gratuita
-const accountSid = process.env.TWILIO_ACCOUNT_SID;
-const authToken = process.env.TWILIO_AUTH_TOKEN;
-const client = twilio(accountSid, authToken);
+const twilioClient = twilio(
+  process.env.TWILIO_ACCOUNT_SID, 
+  process.env.TWILIO_AUTH_TOKEN
+);
 
-const enviarWhatsAppFactura = async (telefonoCliente, nombreCliente, monto, vencimiento) => {
-  try {
-    const fechaFormateada = new Date(vencimiento).toLocaleDateString();
-    
-    // En Twilio, los números de WhatsApp llevan el prefijo 'whatsapp:'
-    const mensaje = await client.messages.create({
-      body: `Hola ${nombreCliente}, tu estado de cuenta de Citynet ha sido actualizado. Tienes un saldo a pagar de $${monto} MXN con vencimiento el ${fechaFormateada}.`,
-      from: 'whatsapp:+14155238886', // Este es el número universal de pruebas de Twilio
-      to: `whatsapp:+521${telefonoCliente}` // Asumiendo que es un número de México (+52)
-    });
+const twilioWhatsAppNumber = process.env.TWILIO_WHATSAPP_NUMBER; 
 
-    console.log(`✅ WhatsApp enviado con éxito a ${telefonoCliente} (ID: ${mensaje.sid})`);
-  } catch (error) {
-    console.error(`❌ Error al enviar WhatsApp a ${telefonoCliente}:`, error);
-  }
+// Función reutilizable para construir el mensaje
+const construirMensaje = (cliente, deudaTotal) => {
+  return `Hola *${cliente.nombre}*, te saludamos de *Citynet*. 🌐\n\nTe recordamos que presentas un saldo pendiente de *$${deudaTotal}* correspondiente a tu servicio de internet (Día de cobro: ${cliente.diaCobro}).\n\nPuedes realizar tu pago vía transferencia, OXXO o en nuestras oficinas.\n\n_Si ya realizaste tu pago, por favor omite este mensaje. ¡Gracias!_`;
 };
 
-module.exports = { enviarWhatsAppFactura };
+// Servicio para enviar el mensaje a través de la API de Twilio
+const enviarMensajeTwilio = async (cliente, deudaTotal) => {
+  const numeroLimpio = String(cliente.telefono).replace(/\D/g, '');
+  if (numeroLimpio.length === 0) throw new Error('Número de teléfono inválido');
+
+  const numeroFinal = numeroLimpio.length === 10 ? `52${numeroLimpio}` : numeroLimpio;
+  const destinoWhatsapp = `whatsapp:+${numeroFinal}`;
+  
+  const mensaje = construirMensaje(cliente, deudaTotal);
+
+  return await twilioClient.messages.create({
+    body: mensaje,
+    from: twilioWhatsAppNumber,
+    to: destinoWhatsapp
+  });
+};
+
+module.exports = {
+  enviarMensajeTwilio
+};

@@ -4,6 +4,7 @@ const router = express.Router();
 const { PrismaClient } = require('@prisma/client');
 const { verificarToken } = require('../middleware/auth');
 const { verificarAdmin } = require('../middleware/auth');
+const { enviarMensajeTwilio } = require('../services/whatsapp');
 const { parse } = require('dotenv');
 const PDFDocument = require('pdfkit');
 const multer = require('multer');
@@ -1109,6 +1110,87 @@ router.get('/cron/procesar-dia', async (req, res) => {
   } catch (error) {
     console.error('❌ [CRON ERROR] Falló la ejecución de tareas:', error);
     return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ==========================================
+// RUTAS DE COBRANZA MASIVA (TWILIO)
+// ==========================================
+
+// --- ENVÍO INDIVIDUAL ---
+router.post('/cobranza/enviar-individual', verificarToken, async (req, res) => {
+  try {
+    const { clienteId } = req.body;
+    if (!clienteId) return res.status(400).json({ error: 'Falta el ID del cliente' });
+
+    // 1. Buscar al cliente y sus facturas en Prisma
+    const cliente = await prisma.cliente.findUnique({
+      where: { id: parseInt(clienteId) },
+      include: { servicios: { include: { facturas: { where: { pagada: false } } } } }
+    });
+
+    if (!cliente) return res.status(404).json({ error: 'Cliente no encontrado' });
+
+    // 2. Calcular deuda total
+    const facturasPendientes = cliente.servicios.flatMap(s => s.facturas);
+    const montoDeuda = facturasPendientes.reduce((acc, f) => acc + Number(f.monto || 0), 0);
+
+    // 3. Enviar mensaje usando el servicio
+    await enviarMensajeTwilio(cliente, montoDeuda.toFixed(2));
+    
+    return res.status(200).json({ success: true, message: 'Aviso enviado correctamente' });
+
+  } catch (error) {
+    console.error('Error en enviar-individual:', error);
+    return res.status(500).json({ error: 'Error al enviar el mensaje por WhatsApp' });
+  }
+});
+
+
+// --- ENVÍO MASIVO (LOTE) ---
+router.post('/cobranza/enviar-masivo', verificarToken, async (req, res) => {
+  try {
+    const { clientesIds } = req.body; 
+
+    if (!clientesIds || !Array.isArray(clientesIds) || clientesIds.length === 0) {
+      return res.status(400).json({ error: 'Lista de IDs inválida o vacía' });
+    }
+
+    // 1. Buscar a todos los clientes del lote de golpe en Prisma
+    const clientes = await prisma.cliente.findMany({
+      where: { id: { in: clientesIds.map(id => parseInt(id)) } },
+      include: { servicios: { include: { facturas: { where: { pagada: false } } } } }
+    });
+
+    let exitosos = 0;
+    let fallidos = 0;
+
+    // 2. Procesar uno por uno para no saturar Twilio (For...of)
+    for (const cliente of clientes) {
+      try {
+        const facturasPendientes = cliente.servicios.flatMap(s => s.facturas);
+        if (facturasPendientes.length === 0) continue; // Si no debe, lo saltamos por seguridad
+        
+        const montoDeuda = facturasPendientes.reduce((acc, f) => acc + Number(f.monto || 0), 0);
+
+        // Llamamos al servicio
+        await enviarMensajeTwilio(cliente, montoDeuda.toFixed(2));
+        exitosos++;
+        
+      } catch (err) {
+        console.error(`Fallo al enviar a ID ${cliente.id}:`, err.message);
+        fallidos++;
+      }
+    }
+
+    return res.status(200).json({ 
+      success: true, 
+      resultados: { total: clientes.length, exitosos, fallidos }
+    });
+
+  } catch (error) {
+    console.error('Error en enviar-masivo:', error);
+    return res.status(500).json({ error: 'Error procesando el lote masivo' });
   }
 });
 
