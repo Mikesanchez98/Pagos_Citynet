@@ -74,6 +74,36 @@ const DetalleCliente = () => {
     }
   };
 
+  const handleCancelarPago = async (pagoId) => {
+    // Alerta de confirmación nativa para evitar clicks por accidente
+    const confirmar = window.confirm("¿Estás completamente seguro de cancelar este pago? Esto volverá a poner la factura de ese mes como PENDIENTE de pago.");
+    
+    if (!confirmar) return;
+
+    try {
+      const token = localStorage.getItem('token');
+      
+      // Llamada a la nueva ruta del backend
+      await api.post(`/admin/pagos/${pagoId}/cancelar`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      alert("Cobro cancelado con éxito. La cuenta del cliente ha sido actualizada.");
+      
+      // 🟢 REFRESCAR DATOS: Llama a la función que recarga la info del cliente 
+      // para que el pago desaparezca de la lista de inmediato (ej: fetchClienteDatos())
+      if (typeof fetchClienteDatos === 'function') {
+        fetchClienteDatos(); 
+      } else {
+        window.location.reload(); // Alternativa rápida si no tienes la función a la mano
+      }
+
+    } catch (error) {
+      console.error("Error al cancelar el cobro:", error);
+      alert(error.response?.data?.error || "Hubo un error al intentar cancelar el pago.");
+    }
+  };
+
   // --- FUNCIONES DE FACTURACIÓN ---
   const abrirModalFactura = () => {
     if (!servicioPrincipal) return alert("Este cliente no tiene un servicio activo.");
@@ -296,14 +326,27 @@ const DetalleCliente = () => {
               {pagos.length > 0 ? (
                 <div className="space-y-3">
                   {pagos.map((pago, index) => (
-                    <div key={pago?.id || index} className="flex justify-between items-center bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                    <div key={pago?.id || index} className="flex justify-between items-center bg-slate-50 p-4 rounded-2xl border border-slate-100 gap-4">
                       <div>
                         <p className="font-black text-green-600">+ ${pago?.monto}</p>
                         <p className="text-[10px] font-bold text-slate-500 mt-1">Método: {pago?.metodoPago}</p>
                       </div>
-                      <div className="text-right">
-                        <p className="text-[10px] font-bold text-slate-400 uppercase">{pago?.mesCorrespondiente}</p>
-                        <p className="text-[10px] font-bold text-slate-400 mt-1">{pago?.fecha ? new Date(pago.fecha).toLocaleDateString() : ''}</p>
+                      
+                      {/* Agrupamos la fecha y el nuevo botón de cancelación a la derecha */}
+                      <div className="flex items-center gap-6">
+                        <div className="text-right">
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{pago?.mesCorrespondiente}</p>
+                          <p className="text-[10px] font-bold text-slate-400 mt-1">{pago?.fecha ? new Date(pago.fecha).toLocaleDateString() : ''}</p>
+                        </div>
+                        
+                        {/* Botón Cancelar */}
+                        <button 
+                          onClick={() => handleCancelarPago(pago?.id)} 
+                          disabled={!pago?.id}
+                          className="px-3 py-2 text-[9px] font-black tracking-wider uppercase text-red-500 border border-red-200 bg-red-50/30 hover:bg-red-50 hover:text-red-600 rounded-xl transition-all disabled:opacity-50"
+                        >
+                          Cancelar
+                        </button>
                       </div>
                     </div>
                   ))}
@@ -316,7 +359,7 @@ const DetalleCliente = () => {
             </div>
 
           </div>
-        </div>
+        </div>  
       </div>
 
       {/* MODAL DE PAGO COMPLETO */}

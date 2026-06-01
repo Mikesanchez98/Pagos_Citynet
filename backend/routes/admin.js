@@ -710,6 +710,72 @@ router.post('/cliente/:id/pagar', verificarToken, async (req, res) => {
   }
 });
 
+// ==========================================
+// RUTA: CANCELAR UN PAGO REALIZADO (CASCADA INVERSA)
+// ==========================================
+router.post('/pagos/:id/cancelar', verificarToken, async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    // 1. Buscar el pago existente
+    const pago = await prisma.pago.findUnique({
+      where: { id: parseInt(id) }
+    });
+
+    if (!pago) {
+      return res.status(404).json({ error: "El registro de pago no existe." });
+    }
+
+    let montoARevertir = Number(pago.monto);
+
+    // 2. Buscar las facturas PAGADAS del cliente (Ordenadas de la más nueva a la más vieja)
+    // Para reabrir primero las últimas que se pagaron.
+    const facturasPagadas = await prisma.factura.findMany({
+      where: {
+        servicio: { clienteId: pago.clienteId },
+        pagada: true
+      },
+      orderBy: { vencimiento: 'desc' } 
+    });
+
+    // 3. Reabrir facturas en cascada inversa
+    for (const factura of facturasPagadas) {
+      if (montoARevertir <= 0) break; // Si ya revertimos todo el monto, nos detenemos
+
+      // Volvemos a marcar la factura como pendiente
+      await prisma.factura.update({
+        where: { id: factura.id },
+        data: { pagada: false }
+      });
+
+      // Descontamos el valor de esta factura del monto que estamos revirtiendo
+      montoARevertir -= Number(factura.monto);
+    }
+
+    // 4. Si sobró dinero por revertir, significa que se había ido al "saldo a favor" (Wallet) del cliente
+    if (montoARevertir > 0) {
+      await prisma.cliente.update({
+        where: { id: pago.clienteId },
+        data: {
+          saldo: { decrement: montoARevertir } // Le quitamos el saldo a favor que se le había dado por error
+        }
+      });
+    }
+
+    // 5. Finalmente, eliminamos el registro del historial de pagos
+    await prisma.pago.delete({
+      where: { id: parseInt(id) }
+    });
+
+    console.log(`⚠️ [PAGO CANCELADO] El pago ID ${id} de $${pago.monto} fue revertido en cascada.`);
+    return res.json({ success: true, mensaje: "Pago cancelado y facturas reabiertas exitosamente." });
+
+  } catch (error) {
+    console.error("❌ Error al cancelar el pago:", error);
+    return res.status(500).json({ error: "No se pudo procesar la cancelación del pago." });
+  }
+});
+
 // Ruta para descargar/ver el PDF de una factura
 router.get('/factura/:id/pdf', async (req, res) => {
   try {
