@@ -611,7 +611,7 @@ const AdminPanel = () => {
                             <div key={f.id} className="flex items-center gap-2 bg-slate-50 border border-slate-200 pl-3 pr-1 py-1 rounded-xl">
                               <span className="text-[10px] font-black text-slate-700">${f.monto}</span>
                               <div className="flex gap-1">
-                                <button onClick={() => marcarComoPagada(f.id)} className="bg-green-500 text-white p-1 rounded-lg text-[8px] font-black uppercase px-2">Pagado</button>
+                                {/* <button onClick={() => marcarComoPagada(f.id)} className="bg-green-500 text-white p-1 rounded-lg text-[8px] font-black uppercase px-2">Pagado</button> */}
                                 <button onClick={() => eliminarFactura(f.id)} className="bg-white text-red-500 border border-red-100 p-1 rounded-lg text-[8px] font-black uppercase px-2">X</button>
                               </div>
                             </div>
