@@ -6,10 +6,8 @@ const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 const { verificarToken } = require('../middleware/auth');
 
-// Configuración manual (Sin librerías obsoletas)
 const MERCHANT_ID = process.env.OPENPAY_MERCHANT_ID;
 const PRIVATE_KEY = process.env.OPENPAY_PRIVATE_KEY;
-// Codificamos la llave en Base64 para la autenticación básica de Openpay
 const AUTH_HEADER = Buffer.from(`${PRIVATE_KEY}:`).toString('base64');
 
 const openpayAPI = axios.create({
@@ -34,39 +32,31 @@ router.post('/crear-checkout', verificarToken, async (req, res) => {
 
     if (!cliente) return res.status(404).json({ error: "Cliente no encontrado." });
 
-    // Aplanamos todas las facturas pendientes de TODOS los servicios del cliente
     const facturasPendientes = cliente.servicios.flatMap(s => s.facturas);
 
     if (facturasPendientes.length === 0) {
-      return res.status(400).json({ error: "No tienes facturas pendientes de pago." });
+      return res.status(400).json({ error: "No tienes facturas pendientes." });
     }
 
-    // Casteo estricto del Decimal de Prisma a Number de JS
-    const montoTotal = facturasPendientes.reduce((acc, f) => {
-      return acc + Number(f.monto); 
-    }, 0);
-
-    console.log(`[Checkout] Cliente ${cliente.id} | Facturas a pagar: ${facturasPendientes.length} | Total: $${montoTotal}`);
+    const montoTotal = facturasPendientes.reduce((acc, f) => acc + Number(f.monto), 0);
 
     if (isNaN(montoTotal) || montoTotal <= 0) {
       return res.status(400).json({ error: "El monto a pagar no es válido." });
     }
 
-    // Formateamos el objeto EXACTAMENTE como lo pide la API de Openpay Checkouts
     const checkoutData = {
-      amount: Number(montoTotal.toFixed(2)), // Lo obligamos a ser Number
+      amount: Number(montoTotal.toFixed(2)),
       description: `Pago Acumulado Internet Citynet - ${cliente.nombre}`,
       order_id: `ORD-${Date.now()}-${cliente.id}`,
       currency: "MXN", 
       customer: {
         name: cliente.nombre || "Cliente",
-        last_name: "Citynet", // Dato de relleno sugerido para evitar rechazos en Sandbox
-        email: "marcoasalzar@citynet.mx",
-        phone_number: cliente.telefono || "" // Dato de relleno sugerido
+        last_name: "Citynet", 
+        email: cliente.usuario.email || "soporte@citynet.mx",
+        phone_number: cliente.telefono || "" 
       },
       send_email: false,
-      // Openpay usa una sola URL para redirigir de vuelta a tu sistema
-      redirect_url: 'http://localhost:3000/dashboard' 
+      redirect_url: 'http://localhost:5173/dashboard' 
     };
 
     const respuestaOpenpay = await openpayAPI.post('/checkouts', checkoutData);
