@@ -194,17 +194,26 @@ const AdminPanel = () => {
     } catch (err) { alert("Error al generar factura"); }
   };
 
-  const generarFacturasLote = async (dia) => {
-    if (!window.confirm(`¿Generar facturas masivas para todos los clientes del grupo ${dia}?`)) return;
+  // 🤖 NUEVA FUNCIÓN: EJECUTAR AUTOMATIZACIÓN DIARIA MANUALMENTE
+  const ejecutarCronManual = async () => {
+    if (!window.confirm("¿Deseas forzar la ejecución de la automatización (Facturas y Cortes) programada para el día de hoy?")) return;
+    
     try {
       const token = localStorage.getItem('token');
-      const res = await api.post(`/admin/facturas/generar-lote`,
-        { diaCobro: dia },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      alert(res.data.mensaje);
-      obtenerClientes();
-    } catch (err) { alert("Error al generar facturas masivas"); }
+      // Apuntamos a la nueva ruta unificada usando GET
+      const res = await api.get('/admin/cron/procesar-dia', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      // Armamos un mensaje detallado con la respuesta del backend
+      const mensajeExito = `¡Automatización completada con éxito!\n\n📋 Facturación: ${res.data.facturas}\n🚨 Cortes: ${res.data.suspensiones}`;
+      alert(mensajeExito);
+      
+      obtenerClientes(); 
+    } catch (err) { 
+      console.error("Error al ejecutar el cron manual:", err);
+      alert("Hubo un error al ejecutar la automatización diaria. Revisa la consola del servidor."); 
+    }
   };
 
   const handleGuardar = async (e) => {
@@ -511,8 +520,12 @@ const AdminPanel = () => {
             <div className="flex flex-col items-center md:items-start w-full md:w-auto">
               <h3 className="font-black text-slate-800 text-sm tracking-widest uppercase mb-3">Facturación Masiva</h3>
               <div className="flex flex-wrap justify-center gap-2">
-                  <button onClick={() => generarFacturasLote(1)} className="bg-slate-900 text-white px-5 py-3 rounded-xl text-[10px] font-black uppercase hover:bg-blue-600 transition-all shadow-md">Facturar Grupo 1</button>
-                  <button onClick={() => generarFacturasLote(15)} className="bg-slate-900 text-white px-5 py-3 rounded-xl text-[10px] font-black uppercase hover:bg-blue-600 transition-all shadow-md">Facturar Grupo 15</button>
+                  <button
+                    onClick={ejecutarCronManual}
+                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded shadow transition duration-200"
+                  >
+                    🤖 Ejecutar Procesos de Hoy
+                  </button>
               </div>
             </div>
 
