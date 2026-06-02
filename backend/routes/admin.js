@@ -72,6 +72,74 @@ router.get('/cliente/:id', async (req, res) => {
   }
 });
 
+// POST /api/admin/registrar-cliente
+router.post('/registrar-cliente', verificarToken, async (req, res) => { 
+  const { email, password, nombre, numCliente, paqueteId, ip, torreId, direccion, latitud, longitud, telefono } = req.body;
+
+  try {
+    let nombrePlan = "Sin Plan";
+    let precioPlan = 0;
+    
+    if (paqueteId) {
+      const paqueteInfo = await prisma.paquete.findUnique({ where: { id: paqueteId } });
+      if (paqueteInfo) {
+        nombrePlan = paqueteInfo.nombre;
+        precioPlan = paqueteInfo.precio;
+      }
+    }
+
+    // 🚀 LÓGICA DE ANIVERSARIO (Petición del jefe)
+    const fechaActual = new Date();
+    let diaRegistro = fechaActual.getDate(); 
+
+    // 🔒 TRAMPA DEL CALENDARIO: Topamos el día al 28 máximo
+    if (diaRegistro > 28) {
+      diaRegistro = 28;
+    }
+
+    const resultado = await prisma.$transaction(async (tx) => {
+      const usuario = await tx.usuario.create({
+        data: { email, password, rol: 'CLIENTE' }
+      });
+
+      const cliente = await tx.cliente.create({
+        data: {
+          nombre,
+          numCliente,
+          usuarioId: usuario.id,
+          paqueteId: paqueteId || null, 
+          
+          // 🛠️ FIX COMPLETO: Cambiado de 'torre' a 'torreId'
+          torreId: torreId ? parseInt(torreId) : null, 
+          
+          // 🚀 Inyectamos el día calculado
+          diaCobro: diaRegistro, 
+          direccion: direccion || null,
+          latitud: latitud ? parseFloat(latitud) : null,
+          longitud: longitud ? parseFloat(longitud) : null,
+          telefono: telefono || null
+        }
+      });
+
+      const servicio = await tx.servicio.create({
+        data: {
+          plan: nombrePlan,     
+          precio: precioPlan,   
+          direccionIp: ip,
+          clienteId: cliente.id
+        }
+      });
+
+      return { usuario, cliente, servicio };
+    });
+
+    res.json({ mensaje: 'Cliente registrado con éxito', data: resultado });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Error al registrar cliente' });
+  }
+});
+
 // 2. Cambiar estatus (Activar/Suspender)
 router.patch('/servicio/:id/estatus', verificarToken, async (req, res) => {
   const { id } = req.params;
@@ -1006,47 +1074,46 @@ router.get('/cron/procesar-dia', async (req, res) => {
 
   console.log('=== 🤖 INICIANDO TAREAS AUTOMÁTICAS DE MEDIANOCHE (VERCEL) ===');
   
-  // Forzamos que los cálculos de día y mes utilicen la hora local de México 
-  // para evitar desfases si el servidor de Vercel corre en otra región.
+  // Forzamos que los cálculos de día y mes utilicen la hora local de México
   const fechaMexico = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Mexico_City" }));
   const diaActual = fechaMexico.getDate(); 
   
   const mesActual = fechaMexico.toLocaleString('es-MX', { month: 'long', timeZone: 'America/Mexico_City' }).toUpperCase();
   const añoActual = fechaMexico.getFullYear();
-  const stringMesCorrespondiente = `${mesActual}-${añoActual}`; // Ej: "MAYO-2026"
+  const stringMesCorrespondiente = `${mesActual}-${añoActual}`; // Ej: "JUNIO-2026"
 
   try {
-    let resultadoFacturas = "No correspondía facturación hoy.";
-    let resultadoSuspensiones = "No correspondía aplicar cortes hoy.";
+    // -------------------------------------------------------------
+    // TASK 1: GENERACIÓN AUTOMÁTICA DE FACTURAS (Todos los días)
+    // -------------------------------------------------------------
+    console.log(`[CRON] Buscando clientes cuyo aniversario de cobro sea hoy (Día ${diaActual})...`);
+    
+    // Buscamos clientes que coincidan con el día de hoy y tengan servicios activos
+    const clientesDelGrupo = await prisma.cliente.findMany({
+      where: { 
+        diaCobro: diaActual,
+        servicios: { some: { estado: 'ACTIVO' } } // 🛠️ FIX: 'servicios' en plural
+      },
+      include: { servicios: { where: { estado: 'ACTIVO' } } }
+    });
 
-    // -------------------------------------------------------------
-    // TASK 1: GENERACIÓN AUTOMÁTICA DE FACTURAS (Días 1 y 15)
-    // -------------------------------------------------------------
-    if (diaActual === 1 || diaActual === 15) {
-      console.log(`[CRON] Generando facturas automáticas para el Grupo del día ${diaActual}...`);
-      
-      const clientesDelGrupo = await prisma.cliente.findMany({
-        where: { 
-          diaCobro: diaActual,
-          servicio: { estado: 'ACTIVO' } 
-        },
-        include: { servicio: true }
+    let facturasCreadas = 0;
+    for (const cliente of clientesDelGrupo) {
+      // Verificamos si ya existe una factura para este cliente en el mes en curso
+      const facturaExiste = await prisma.factura.findFirst({
+        where: {
+          clienteId: cliente.id,
+          mes: stringMesCorrespondiente
+        }
       });
 
-      let facturasCreadas = 0;
-      for (const cliente of clientesDelGrupo) {
-        const facturaExiste = await prisma.factura.findFirst({
-          where: {
-            clienteId: cliente.id,
-            mes: stringMesCorrespondiente
-          }
-        });
-
-        if (!facturaExiste && cliente.servicio) {
+      // Si no existe, recorremos sus servicios activos para facturar
+      if (!facturaExiste && cliente.servicios.length > 0) {
+        for (const servicio of cliente.servicios) {
           await prisma.factura.create({
             data: {
               clienteId: cliente.id,
-              monto: cliente.servicio.precio,
+              monto: servicio.precio, // 🛠️ FIX: precio extraído del servicio del bucle
               mes: stringMesCorrespondiente,
               estado: 'PENDIENTE',
               fechaEmision: new Date()
@@ -1055,51 +1122,74 @@ router.get('/cron/procesar-dia', async (req, res) => {
           facturasCreadas++;
         }
       }
-      resultadoFacturas = `Facturas del Grupo ${diaActual} procesadas. Creadas: ${facturasCreadas}`;
-      console.log(`✅ [CRON] ${resultadoFacturas}`);
+    }
+    
+    const resultadoFacturas = `Procesado día ${diaActual}. Facturas creadas: ${facturasCreadas}`;
+    console.log(`✅ [CRON] ${resultadoFacturas}`);
+
+    // -------------------------------------------------------------
+    // TASK 2: SUSPENSIÓN AUTOMÁTICA POR FALTA DE PAGO (Día de cobro + 4 días de tolerancia)
+    // -------------------------------------------------------------
+    // Si hoy es día 5, el grupo que venció y se debe cortar es el del día 1 (5 - 4 = 1).
+    // Si hoy es día 20, el grupo a cortar es el del día 16 (20 - 4 = 16).
+    let grupoACortar = diaActual - 4;
+    let mesBusqueda = stringMesCorrespondiente;
+
+    // 🔒 CONTROL DE CAMBIO DE MES:
+    // Si hoy es día 1, 2, 3 o 4, el grupo a cortar pertenece a los últimos días del mes anterior.
+    if (grupoACortar <= 0) {
+      const fechaMesAnterior = new Date(fechaMexico);
+      fechaMesAnterior.setMonth(fechaMesAnterior.getMonth() - 1);
+      
+      const mesAnteriorNombre = fechaMesAnterior.toLocaleString('es-MX', { month: 'long', timeZone: 'America/Mexico_City' }).toUpperCase();
+      const añoMesAnterior = fechaMesAnterior.getFullYear();
+      mesBusqueda = `${mesAnteriorNombre}-${añoMesAnterior}`;
+      
+      // Ajustamos el día basándonos en nuestro tope de calendario (28 días)
+      grupoACortar = 28 + grupoACortar; 
     }
 
-    // -------------------------------------------------------------
-    // TASK 2: SUSPENSIÓN AUTOMÁTICA POR FALTA DE PAGO (Días 5 y 20)
-    // -------------------------------------------------------------
-    const DIAS_DE_CORTE = [5, 20]; 
+    console.log(`[CRON] Revisando impagos del Grupo ${grupoACortar} correspondientes al periodo ${mesBusqueda}...`);
 
-    if (DIAS_DE_CORTE.includes(diaActual)) {
-      const grupoACortar = diaActual === 5 ? 1 : 15;
-      console.log(`[CRON] Revisando impagos para aplicar suspensiones al Grupo ${grupoACortar}...`);
+    const facturasVencidas = await prisma.factura.findMany({
+      where: {
+        mes: mesBusqueda,
+        estado: 'PENDIENTE',
+        cliente: { diaCobro: grupoACortar }
+      },
+      include: { cliente: { include: { servicios: true } } }
+    });
 
-      const facturasVencidas = await prisma.factura.findMany({
-        where: {
-          mes: stringMesCorrespondiente,
-          estado: 'PENDIENTE',
-          cliente: { diaCobro: grupoACortar }
-        },
-        include: { cliente: { include: { servicio: true } } }
-      });
-
-      let suspendidosContador = 0;
+    let suspendidosContador = 0;
+    
+    if (facturasVencidas.length > 0) {
+      const servicioIds = [];
       
-      if (facturasVencidas.length > 0) {
-        // Mapeamos los IDs de los servicios vinculados a las facturas vencidas
-        const servicioIds = facturasVencidas
-          .filter(f => f.cliente?.servicio?.estado === 'ACTIVO')
-          .map(f => f.cliente.servicio.id);
-
-        if (servicioIds.length > 0) {
-          // Actualización masiva optimizada
-          const suspensiones = await prisma.servicio.updateMany({
-            where: { id: { in: servicioIds } },
-            data: { estado: 'SUSPENDIDO' }
-          });
-          suspendidosContador = suspensiones.count;
+      // Recorremos las facturas vencidas y extraemos los IDs de sus servicios activos
+      for (const factura of facturasVencidas) {
+        if (factura.cliente?.servicios) {
+          for (const s of factura.cliente.servicios) {
+            if (s.estado === 'ACTIVO') {
+              servicioIds.push(s.id);
+            }
+          }
         }
       }
-      
-      resultadoSuspensiones = `Corte completado para el Grupo ${grupoACortar}. Suspendidos: ${suspendidosContador}`;
-      console.log(`✅ [CRON] ${resultadoSuspensiones}`);
-    }
 
-    // Responder de forma exitosa a Vercel para cerrar la ejecución
+      if (servicioIds.length > 0) {
+        // Ejecutamos la suspensión masiva optimizada en una sola consulta
+        const suspensiones = await prisma.servicio.updateMany({
+          where: { id: { in: servicioIds } },
+          data: { estado: 'SUSPENDIDO' }
+        });
+        suspendidosContador = suspensiones.count;
+      }
+    }
+    
+    const resultadoSuspensiones = `Corte completado para el Grupo ${grupoACortar}. Suspendidos: ${suspendidosContador}`;
+    console.log(`✅ [CRON] ${resultadoSuspensiones}`);
+
+    // Responder a Vercel con el informe final para cerrar la ejecución limpiamente
     return res.json({
       success: true,
       fechaProcesada: fechaMexico.toISOString(),
