@@ -21,6 +21,16 @@ const openpayAPI = axios.create({
 router.post('/openpay', async (req, res) => {
   const evento = req.body;
   
+  // 🔑 INTERCEPTOR: Capturar el código de verificación de Openpay
+  if (evento.verification_code) {
+    console.log('\n==================================================');
+    console.log('🤖 [WEBHOOK OPENPAY] ¡CÓDIGO DE VERIFICACIÓN ENCONTRADO!');
+    console.log(`👉 Tu código es:  ${evento.verification_code}  👈`);
+    console.log('==================================================\n');
+    return res.status(200).send("Código recibido");
+  }
+
+  // --- A partir de aquí tu lógica original queda exactamente igual ---
   console.log(`[Webhook] Evento recibido: ${evento.type}`);
 
   if (evento.type === 'charge.confirmed' || evento.type === 'charge.succeeded') {

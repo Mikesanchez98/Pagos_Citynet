@@ -19,7 +19,7 @@ if (process.env.VERCEL !== '1') {
 
 console.log("🚩 PASO 3: Pasamos la condicional sin morir"); // <-- RASTREADOR 3
 
-const webhook = require('./routes/webhook'); 
+const webhookPagos = require('./routes/webhook'); 
 const rutasPagos = require('./routes/pagos'); 
 //const iniciarCronFacturacion = require('./cron/facturacion'); 
 
@@ -54,7 +54,7 @@ app.use(express.json());
 app.use('/api/auth', authRoutes);
 app.use('/api/cliente', clienteRoutes);
 app.use('/api/admin', adminRoutes);
-app.use('/api/webhook', webhook);
+app.use('/api/webhook', webhookPagos);
 app.use('/api/pagos', rutasPagos); 
 app.use('/api/paquetes', paqueteRoutes);
 //if (process.env.VERCEL !== '1') {
