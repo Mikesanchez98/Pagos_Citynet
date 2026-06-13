@@ -14,7 +14,7 @@ const paqueteRoutes = require('./routes/paquete');
 console.log("🚩 PASO 2: Llegamos justo antes de la condicional de Vercel"); // <-- RASTREADOR 2
 
 if (process.env.VERCEL !== '1') {
-  require('./services/automatizacion'); 
+  require('./services/automatizacion')(); 
 }
 
 console.log("🚩 PASO 3: Pasamos la condicional sin morir"); // <-- RASTREADOR 3

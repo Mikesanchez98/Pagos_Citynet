@@ -50,10 +50,11 @@ router.post('/crear-checkout', verificarToken, async (req, res) => {
       order_id: `ORD-${Date.now()}-${cliente.id}`,
       currency: "MXN", 
       customer: {
-        name: cliente.nombre || "Cliente",
+        name: cliente.nombre || "Usuario",
         last_name: "Citynet", 
-        email: cliente.usuario.email || "soporte@citynet.mx",
-        phone_number: cliente.telefono || "" 
+        email: "soporte@citynet.mx",
+        // 👇 REGLA DE ORO: Si no hay teléfono, pasamos uno de relleno válido, NUNCA ""
+        phone_number: cliente.telefono ? cliente.telefono : "5551234567" 
       },
       send_email: false,
       redirect_url: 'http://localhost:5173/dashboard' 
@@ -64,6 +65,7 @@ router.post('/crear-checkout', verificarToken, async (req, res) => {
 
   } catch (error) {
     console.error("[Error Checkout]:", error.response?.data || error.message);
+    console.error("🚨 Error de Openpay al crear cargo:", error.response?.data || error.message);
     res.status(500).json({ error: "Error interno en la pasarela" });
   }
 });

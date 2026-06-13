@@ -5,86 +5,94 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
-  directUrl= env("DIRECT_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model Usuario {
-  id            String   @id @default(uuid())
-  email         String   @unique
-  password      String
-  rol           String   @default("CLIENTE") // ADMIN, CLIENTE
-  cliente       Cliente?
+  id       String   @id @default(uuid())
+  email    String   @unique
+  password String
+  rol      String   @default("CLIENTE") // ADMIN, CLIENTE
+  cliente  Cliente?
 }
 
 model Cliente {
-  id            Int       @id @default(autoincrement())
-  nombre        String
-  numCliente    String    @unique
-  email         String?
-  telefono      String?
-  usuario       Usuario   @relation(fields: [usuarioId], references: [id])
-  usuarioId     String    @unique
-  saldo         Float     @default(0)
-  servicios     Servicio[]
-  diaCobro      Int       @default(1)
-  direccion     String?
-  latitud       Float?
-  longitud      Float?
+  id          Int        @id @default(autoincrement())
+  nombre      String
+  numCliente  String     @unique
+  email       String?
+  telefono    String?
+  saldo       Float      @default(0)
+  diaCobro    Int        @default(1)
 
-  //Relacion con la torre
-  torreId       Int?
-  torre         Torre?    @relation(fields: [torreId], references: [id])
-
-  pagos         Pago[]
-  tickets       Ticket[]
-
-  paqueteId     String?
-  paquete       Paquete?  @relation(fields: [paqueteId], references: [id])
+  // Relaciones Globales
+  usuarioId   String     @unique
+  usuario     Usuario    @relation(fields: [usuarioId], references: [id])
+  servicios   Servicio[]
+  facturas    Factura[]
+  pagos       Pago[]
+  tickets     Ticket[]
 }
 
 model Torre {
-  id            Int       @id @default(autoincrement())
-  nombre        String
-  latitud       Float?
-  longitud      Float?
-  clientes      Cliente[] //Relacion: Una torre alimenta a muchos clientes
+  id          Int        @id @default(autoincrement())
+  nombre      String
+  latitud     Float?
+  longitud    Float?
+  
+  // Relacion: Una torre alimenta a muchas instalaciones/servicios
+  servicios   Servicio[] 
 }
 
 model Servicio {
   id          Int      @id @default(autoincrement())
-  plan        String   // Ej: 20 Megas
-  precio      Decimal  @db.Decimal(10, 2)
-  direccionIp String?  @default("192.168.1.1") // <--- AGREGA ESTO
   estado      String   @default("ACTIVO")
-  cliente     Cliente  @relation(fields: [clienteId], references: [id])
+  direccionIp String?  @default("192.168.1.1")
+  
+  // 📍 Datos físicos de esta instalación en particular
+  direccion   String?
+  latitud     Float?
+  longitud    Float?
+  
+  // Relacion con la torre
+  torreId     Int?
+  torre       Torre?   @relation(fields: [torreId], references: [id])
+  
+  // 📦 El paquete contratado para esta instalación (Temporalmente opcional para salvar tus datos)
+  paqueteId   String
+  paquete     Paquete @relation(fields: [paqueteId], references: [id])
+
+  // 👤 El dueño de este servicio
   clienteId   Int
-  facturas    Factura[]
+  cliente     Cliente @relation(fields: [clienteId], references: [id], onDelete: Cascade)
 }
 
 model Factura {
   id          Int      @id @default(autoincrement())
-  monto       Decimal  @db.Decimal(10, 2)
+  monto       Float    // Cambiado de Decimal a Float para unificar el manejo de dinero
   vencimiento DateTime
   pagada      Boolean  @default(false)
-  servicio    Servicio @relation(fields: [servicioId], references: [id])
-  servicioId  Int
+  
+  // 👤 La factura se emite a la cuenta global del cliente
+  clienteId   Int
+  cliente     Cliente @relation(fields: [clienteId], references: [id], onDelete: Cascade)
 }
 
 model Pago {
-  id          Int      @id @default(autoincrement())
-  monto       Float
-  fecha       DateTime @default(now())
-  mesCorrespondiente  String 
-  metodoPago  String 
-  notas       String?
+  id                  Int      @id @default(autoincrement())
+  monto               Float
+  fecha               DateTime @default(now())
+  mesCorrespondiente String 
+  metodoPago          String 
+  notas               String?
 
-  clienteId   Int
-  cliente     Cliente  @relation(fields: [clienteId], references: [id])
+  clienteId           Int
+  cliente             Cliente  @relation(fields: [clienteId], references: [id], onDelete: Cascade)
 }
 
-model Ticket{
+model Ticket {
   id          Int      @id @default(autoincrement())
   titulo      String   // Ej: "Sin internet", "Falla de router"
   descripcion String?  @db.Text // Detalles del reporte
@@ -99,15 +107,15 @@ model Ticket{
   cliente     Cliente  @relation(fields: [clienteId], references: [id], onDelete: Cascade)
 }
 
-model Paquete{
-  id          String   @id @default(uuid())
+model Paquete {
+  id          String     @id @default(uuid())
   nombre      String  
   velocidad   Int
   precio      Float
   descripcion String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
 
-  //En caso de que algun paquete se vinculen clientes a los paquetes
-  clientes    Cliente[]
+  // Los servicios que tienen contratado este paquete
+  servicios   Servicio[]
 }

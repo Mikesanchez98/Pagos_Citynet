@@ -254,22 +254,28 @@ const AdminPanel = () => {
       });
       
       const clienteFresco = res.data;
+      // Obtenemos el primer servicio de forma segura
       const servicioActual = clienteFresco.servicios && clienteFresco.servicios.length > 0 ? clienteFresco.servicios[0] : {};
 
       setForm({
+        // 👤 Datos directos del Cliente
         nombre: clienteFresco.nombre || '',
-        direccion: clienteFresco.direccion || '',
-        torreId: clienteFresco.torreId || '',
-        latitud: clienteFresco.latitud || '',
-        longitud: clienteFresco.longitud || '',
-        paqueteId: clienteFresco.paqueteId || '',
-        precio: servicioActual.precio || '', 
         numCliente: clienteFresco.numCliente || '',
-        ip: servicioActual.direccionIp || '', 
         diaCobro: clienteFresco.diaCobro || 1,
         telefono: clienteFresco.telefono || '',
         email: clienteFresco.usuario ? clienteFresco.usuario.email : '', 
-        password: clienteFresco.usuario ? clienteFresco.usuario.password : ''
+        password: '', // 🔒 Es mejor dejarlo vacío para no mostrar la contraseña encriptada
+
+        // 📍 Datos que ahora vienen del Servicio
+        direccion: servicioActual.direccion || '',
+        torreId: servicioActual.torreId || '',
+        latitud: servicioActual.latitud || '',
+        longitud: servicioActual.longitud || '',
+        ip: servicioActual.direccionIp || '', 
+        
+        // 📦 Datos que vienen del Paquete (anidado en el servicio)
+        paqueteId: servicioActual.paqueteId || '',
+        precio: servicioActual.paquete ? servicioActual.paquete.precio : '', 
       });
 
     } catch (error) {

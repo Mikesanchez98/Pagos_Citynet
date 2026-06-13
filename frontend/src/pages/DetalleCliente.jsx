@@ -21,6 +21,7 @@ const DetalleCliente = () => {
 
   useEffect(() => {
     fetchClienteDetalle();
+    cargarCatalogos();
   }, [id]);
 
   const fetchClienteDetalle = async () => {
@@ -42,7 +43,7 @@ const DetalleCliente = () => {
 
   // EXTRACCIÓN SEGURA DE DATOS 
   const servicioPrincipal = cliente?.servicios?.[0];
-  const facturas = servicioPrincipal?.facturas || [];
+  const facturas = cliente?.facturas || [];
   const pagos = cliente?.pagos || [];
 
   // 🟢 NUEVO: CÁLCULOS DE BALANCE DE CUENTA
@@ -50,6 +51,118 @@ const DetalleCliente = () => {
     .filter(f => !f.pagada)
     .reduce((total, f) => total + parseFloat(f.monto || 0), 0);
   const saldoAFavor = parseFloat(cliente?.saldo || 0);
+
+  //Estados para el nuevo servicio
+  const [mostrarModalServicio, setMostrarModalServicio] = useState(false);
+  const [formServicio, setFormServicio] = useState({
+    direccion: '', ip: '', paqueteId: '', torreId: '', latitud: '', longitud: ''
+  });
+  const [paquetesDisponibles, setPaquetesDisponibles] = useState([]);
+  const [torresDisponibles, setTorresDisponibles] = useState([]);
+
+  // 🟢 1. CARGAR CATÁLOGOS CON LAS RUTAS REALES
+  const cargarCatalogos = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const config = { headers: { Authorization: `Bearer ${token}` } };
+      
+      // Cargar Paquetes (Según tu AdminPanel, esta ruta va sin prefijo /admin)
+      try {
+        const resPaquetes = await api.get('/paquetes');
+        if (resPaquetes && resPaquetes.data) setPaquetesDisponibles(resPaquetes.data);
+      } catch (err) { console.error("Error al cargar paquetes:", err); }
+
+      // Cargar Torres (Según tu AdminPanel, esta sí lleva /admin/torres)
+      try {
+        const resTorres = await api.get('/admin/torres', config);
+        if (resTorres && resTorres.data) setTorresDisponibles(resTorres.data);
+      } catch (err) { console.error("Error al cargar torres:", err); }
+
+    } catch (error) { console.error("Error general en catálogos:", error); }
+  };
+
+
+  // 🟢 2. ABRIR MODAL FACTURA (Agregando el campo 'concepto')
+  const abrirModalFactura = (servicio = null) => {
+    if (servicio) {
+      // 🎯 FLUJO INDIVIDUAL: Se presionó el botón de una instalación
+      setFacturaData({ 
+        monto: servicio.paquete?.precio || 0,
+        servicioId: servicio.id,
+        tipo: 'individual', // 👈 Guardamos el tipo
+        concepto: `Mensualidad de Internet - ${servicio.paquete?.nombre || ''}`
+      });
+    } else {
+      // 🌎 FLUJO GLOBAL: Se presionó el botón general de abajo
+      const serviciosActivos = cliente?.servicios?.filter(s => s.estado === 'ACTIVO') || [];
+      
+      if (serviciosActivos.length === 0) {
+        return alert("Este cliente no tiene servicios activos para facturar de forma global.");
+      }
+
+      const totalSugerido = serviciosActivos.reduce((sum, s) => sum + (s.paquete?.precio || 0), 0);
+      const conceptoText = serviciosActivos.length > 1 
+        ? `Mensualidad global de ${serviciosActivos.length} servicios activos`
+        : `Mensualidad de Internet - ${serviciosActivos[0]?.paquete?.nombre}`;
+
+      setFacturaData({ 
+        monto: totalSugerido,
+        servicioId: null,
+        tipo: 'global', // 👈 Guardamos el tipo
+        concepto: conceptoText
+      });
+    }
+    
+    setShowModalFactura(true);
+  };
+
+  // 🟢 3. SUBMIT DE LA FACTURA (Con todo el cuerpo de datos que pide tu backend)
+  const handleGenerarFactura = async (e) => {
+    e.preventDefault();
+    try {
+      const token = localStorage.getItem('token');
+      
+      // 🧠 Decidimos la URL dinámicamente según el botón que se usó
+      const urlDestino = facturaData.tipo === 'individual'
+        ? `/admin/servicio/${facturaData.servicioId}/generar-factura`
+        : `/admin/cliente/${cliente.id}/generar-factura`;
+      
+      await api.post(urlDestino, 
+        { 
+          monto: facturaData.monto,
+          concepto: facturaData.concepto
+        }, 
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      
+      alert(`Factura generada con éxito (${facturaData.tipo.toUpperCase()})`);
+      setShowModalFactura(false);
+      
+      if (typeof fetchClienteDetalle === 'function') fetchClienteDetalle();
+    } catch (err) { 
+      console.error("Error al generar factura manual:", err);
+      alert("Error al generar la factura"); 
+    }
+  };
+
+  //Funcion para guardar el servicio extra
+  const handleAgregarServicio = async (e) => {
+    e.preventDefault();
+    try{
+      const token = localStorage.getItem('token');
+      await api.post(`/admin/cliente/${cliente.id}/servicio`, formServicio, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      alert("Nuevo servicio registrado con éxito");
+      setMostrarModalServicio(false);
+      setFormServicio({ direccion: '', ip: '', paqueteId: '', torreId: '', latitud: '', longitud: '' });
+
+    } catch(error){
+      console.error("Error al registrar el nuevo servicio:", error);
+      alert("Hubo un error al intentar agregar el servicio");
+    }
+  };
 
   // --- FUNCIONES DE PAGOS ---
   const abrirModalPago = () => {
@@ -101,29 +214,6 @@ const DetalleCliente = () => {
     } catch (error) {
       console.error("Error al cancelar el cobro:", error);
       alert(error.response?.data?.error || "Hubo un error al intentar cancelar el pago.");
-    }
-  };
-
-  // --- FUNCIONES DE FACTURACIÓN ---
-  const abrirModalFactura = () => {
-    if (!servicioPrincipal) return alert("Este cliente no tiene un servicio activo.");
-    setFacturaData({ monto: servicioPrincipal.precio });
-    setShowModalFactura(true);
-  };
-
-  const handleGenerarFactura = async (e) => {
-    e.preventDefault();
-    try {
-      const token = localStorage.getItem('token');
-      await api.post(`/admin/servicio/${servicioPrincipal.id}/generar-factura`, 
-        { monto: facturaData.monto }, 
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      alert("Factura generada exitosamente");
-      setShowModalFactura(false);
-      fetchClienteDetalle();
-    } catch (err) { 
-      alert("Error al generar factura manual"); 
     }
   };
 
@@ -200,7 +290,7 @@ const DetalleCliente = () => {
                 {servicioPrincipal?.estado || 'SIN SERVICIO'}
               </span>
             </div>
-            <p className="text-sm font-bold text-slate-500">📍 {cliente.direccion || 'Sin dirección registrada'}</p>
+            <p className="text-sm font-bold text-slate-500">📍 {servicioPrincipal.direccion || 'Sin dirección registrada'}</p>
             
             <div className="flex gap-4 mt-4 flex-wrap items-center">
               <span className="bg-slate-50 text-slate-600 px-3 py-1 rounded-lg border border-slate-200 text-xs font-black uppercase flex items-center h-8">
@@ -244,27 +334,70 @@ const DetalleCliente = () => {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           
-          {/* COLUMNA IZQ: DETALLES DEL SERVICIO */}
+         {/* COLUMNA IZQ: DETALLES DEL SERVICIO */}
           <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 h-fit">
-            <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest mb-6">Detalles del Servicio</h3>
-            {servicioPrincipal ? (
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest">Instalaciones</h3>
+              {/* Botón para abrir el formulario del nuevo servicio */}
+              <button 
+                onClick={() => setMostrarModalServicio(true)} 
+                className="bg-blue-100 text-blue-600 px-3 py-1 text-[10px] font-black uppercase rounded-lg hover:bg-blue-200 transition-all"
+              >
+                + Añadir
+              </button>
+            </div>
+
+            {cliente.servicios && cliente.servicios.length > 0 ? (
               <div className="space-y-4">
-                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                  <p className="text-[10px] font-black text-slate-400 uppercase">Plan Contratado</p>
-                  <p className="text-lg font-black text-blue-600">{servicioPrincipal.plan}</p>
-                </div>
-                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                  <p className="text-[10px] font-black text-slate-400 uppercase">Mensualidad</p>
-                  <p className="text-lg font-black text-slate-800">${servicioPrincipal.precio}</p>
-                </div>
-                
-                {/* 🟢 NUEVO: BOTÓN QUE ABRE EL MODAL DE FACTURA */}
-                <button onClick={abrirModalFactura} className="w-full mt-4 bg-white border-2 border-slate-200 text-slate-600 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest hover:border-blue-500 hover:text-blue-500 transition-all">
-                  + Generar Factura Manual
+                {cliente.servicios.map((servicio, index) => (
+                  <div key={servicio.id} className="bg-slate-50 p-4 rounded-2xl border border-slate-200 relative overflow-hidden">
+                    <div className="absolute top-0 left-0 w-1 h-full bg-blue-500"></div> {/* Línea decorativa */}
+                    
+                    <div className="flex justify-between items-start mb-2">
+                      <div>
+                        <p className="text-[10px] font-black text-slate-400 uppercase">Instalación #{index + 1}</p>
+                        <p className="text-sm font-bold text-slate-800 mt-1">{servicio.direccion || 'Sin dirección registrada'}</p>
+                      </div>
+                      <span className={`text-[9px] font-black uppercase px-2 py-1 rounded-md ${servicio.estado === 'ACTIVO' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                        {servicio.estado}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 mt-4">
+                      <div className="bg-white p-2 rounded-xl border border-slate-100">
+                        <p className="text-[9px] font-black text-slate-400 uppercase">Plan Contratado</p>
+                        <p className="text-sm font-black text-blue-600">{servicio.paquete?.nombre || 'Sin plan'}</p>
+                      </div>
+                      <div className="bg-white p-2 rounded-xl border border-slate-100">
+                        <p className="text-[9px] font-black text-slate-400 uppercase">Mensualidad</p>
+                        <p className="text-sm font-black text-slate-800">${servicio.paquete?.precio || 0}</p>
+                      </div>
+                    </div>
+                    
+                    <div className="mt-3 mb-4 text-xs font-mono text-slate-500">
+                      📡 IP: <span className="font-bold text-slate-700">{servicio.direccionIp || 'N/A'}</span>
+                    </div>
+
+                    {/* 🟢 NUEVO: BOTÓN MOVIDO AQUÍ ADENTRO DEL .map() */}
+                    {/* Ahora le pasamos la variable "servicio" específica de esta iteración */}
+                    <button 
+                      onClick={() => abrirModalFactura(servicio)} 
+                      className="w-full bg-white border-2 border-slate-200 text-slate-600 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest hover:border-blue-500 hover:text-blue-500 transition-all"
+                    >
+                      + Facturar este servicio
+                    </button>
+                  </div>
+                ))}
+                {/* Al final de tu contenedor de instalaciones, fuera del .map() */}
+                <button 
+                  onClick={() => abrirModalFactura()} 
+                  className="w-full mt-4 bg-white border-2 border-slate-200 text-slate-600 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest hover:border-blue-500 hover:text-blue-500 transition-all"
+                >
+                  + Generar Factura Mensual (Global)
                 </button>
               </div>
             ) : (
-              <p className="text-xs font-bold text-slate-400">Este cliente no tiene un servicio activo registrado.</p>
+              <p className="text-xs font-bold text-slate-400 text-center py-4">Este cliente no tiene servicios activos.</p>
             )}
           </div>
 
@@ -407,7 +540,7 @@ const DetalleCliente = () => {
           <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-8 shadow-2xl animate-in fade-in zoom-in duration-200">
             <h3 className="text-xl font-black text-slate-800 mb-1">Generar Factura</h3>
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-6">
-              Servicio: <span className="text-blue-500">{servicioPrincipal?.plan}</span>
+              Servicio: <span className="text-blue-500">{facturaData.planNombre}</span>
             </p>
 
             <form onSubmit={handleGenerarFactura} className="space-y-4">
@@ -429,6 +562,105 @@ const DetalleCliente = () => {
                 <button type="submit" className="flex-1 p-4 rounded-2xl font-black text-xs uppercase tracking-widest text-white bg-blue-500 hover:bg-blue-600 shadow-lg shadow-blue-200 transition-all">Generar</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ==========================================
+          MODAL: AGREGAR NUEVO SERVICIO/INSTALACIÓN
+          ========================================== */}
+      {mostrarModalServicio && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex justify-center items-center p-4">
+          <div className="bg-white rounded-[2.5rem] shadow-xl w-full max-w-lg overflow-hidden border border-slate-100">
+            <div className="p-8">
+              <h2 className="text-xl font-black text-slate-800 mb-6">Añadir Nueva Instalación</h2>
+              
+              <form onSubmit={handleAgregarServicio} className="space-y-4">
+                
+                {/* Dirección */}
+                <input 
+                  required 
+                  type="text" 
+                  placeholder="Dirección de la nueva instalación" 
+                  className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold placeholder:text-slate-400"
+                  value={formServicio.direccion} 
+                  onChange={e => setFormServicio({...formServicio, direccion: e.target.value})} 
+                />
+
+                {/* IP y Torre */}
+                <div className="grid grid-cols-2 gap-4">
+                  <input 
+                    required 
+                    type="text" 
+                    placeholder="IP (Ej: 192.168.1.50)" 
+                    className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-mono font-bold text-blue-600 placeholder:text-slate-400"
+                    value={formServicio.ip} 
+                    onChange={e => setFormServicio({...formServicio, ip: e.target.value})} 
+                  />
+                  <select 
+                    className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold text-slate-600"
+                    value={formServicio.torreId} 
+                    onChange={e => setFormServicio({...formServicio, torreId: e.target.value})}
+                  >
+                    <option value="">-- Torre (Opcional) --</option>
+                    {torresDisponibles.map(torre => (
+                      <option key={torre.id} value={torre.id}>{torre.nombre}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Coordenadas */}
+                <div className="grid grid-cols-2 gap-4">
+                  <input 
+                    type="number" step="any" 
+                    placeholder="Latitud" 
+                    className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold placeholder:text-slate-400"
+                    value={formServicio.latitud} 
+                    onChange={e => setFormServicio({...formServicio, latitud: e.target.value})} 
+                  />
+                  <input 
+                    type="number" step="any" 
+                    placeholder="Longitud" 
+                    className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold placeholder:text-slate-400"
+                    value={formServicio.longitud} 
+                    onChange={e => setFormServicio({...formServicio, longitud: e.target.value})} 
+                  />
+                </div>
+
+                {/* Paquete */}
+                <select 
+                  required
+                  className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold text-slate-600 cursor-pointer"
+                  value={formServicio.paqueteId} 
+                  onChange={e => setFormServicio({...formServicio, paqueteId: e.target.value})}
+                >
+                  <option value="">-- Selecciona un Plan --</option>
+                  {paquetesDisponibles.map(paquete => (
+                    <option key={paquete.id} value={paquete.id}>
+                      {paquete.nombre} ({paquete.velocidad} Mbps) - ${paquete.precio}
+                    </option>
+                  ))}
+                </select>
+
+                {/* Botones de acción */}
+                <div className="flex gap-4 pt-4">
+                  <button 
+                    type="button" 
+                    onClick={() => setMostrarModalServicio(false)} 
+                    className="w-full bg-slate-100 text-slate-500 py-4 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-200 transition-all"
+                  >
+                    Cancelar
+                  </button>
+                  <button 
+                    type="submit" 
+                    className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg shadow-blue-200 hover:bg-blue-700 transition-all"
+                  >
+                    Guardar
+                  </button>
+                </div>
+
+              </form>
+            </div>
           </div>
         </div>
       )}

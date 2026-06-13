@@ -8,86 +8,123 @@ cron.schedule('0 0 * * *', async () => {
   console.log('=== 🤖 [CRON] INICIANDO TAREAS AUTOMÁTICAS DE MEDIANOCHE ===');
   
   const hoy = new Date();
-  const diaActual = hoy.getDate(); // Número del 1 al 28-31
+  const diaActual = hoy.getDate(); 
   
-  // Identificador del mes (Ej: "JUNIO-2026")
   const mesActual = hoy.toLocaleString('es-MX', { month: 'long' }).toUpperCase();
   const añoActual = hoy.getFullYear();
   const stringMesCorrespondiente = `${mesActual}-${añoActual}`;
 
   try {
     // -----------------------------------------------------------------
-    // TAREA 1: GENERACIÓN DINÁMICA DE FACTURAS (Petición de tu Jefe)
+    // TAREA 1: GENERACIÓN DINÁMICA GLOBAL Y DESCUENTO DE SALDO A FAVOR
     // -----------------------------------------------------------------
     console.log(`[CRON] Buscando clientes con día de cobro: ${diaActual}...`);
     
-    // Buscamos los clientes que les toca pagar hoy y traemos sus servicios activos
+    // Buscamos clientes que cobren hoy y traemos sus servicios activos con sus paquetes
     const clientesDelGrupo = await prisma.cliente.findMany({
       where: { diaCobro: diaActual },
       include: { 
-        servicios: { where: { estado: 'ACTIVO' } } 
+        servicios: { 
+          where: { estado: 'ACTIVO' },
+          include: { paquete: true }
+        }
       }
     });
 
     for (const cliente of clientesDelGrupo) {
-      for (const servicio of cliente.servicios) {
-        
-        // Evitamos duplicar facturas si el cron corre dos veces por error
-        const facturaExiste = await prisma.factura.findFirst({
-          where: {
-            servicioId: servicio.id,
-            mes: stringMesCorrespondiente
-          }
-        });
+      if (!cliente.servicios || cliente.servicios.length === 0) continue;
 
-        if (!facturaExiste) {
-          // 🗓️ CÁLCULO DE VENCIMIENTO: Le damos 4 días de tolerancia 
-          // (Si cobra el 1 vence el 5, si cobra el 15 vence el 19, si cobra el 2 vence el 6)
-          const fechaVencimiento = new Date();
-          fechaVencimiento.setDate(hoy.getDate() + 4);
-
-          await prisma.factura.create({
-            data: {
-              servicioId: servicio.id,
-              monto: servicio.precio,
-              mes: stringMesCorrespondiente,
-              pagada: false, // Usando el booleano de tu segundo archivo
-              fechaEmision: new Date(),
-              vencimiento: fechaVencimiento // Guardamos su fecha límite real
-            }
-          });
-          console.log(`📄 Factura generada para ${cliente.nombre} (Servicio #${servicio.id})`);
+      // Evitamos duplicar si el cron se ejecuta dos veces por error
+      // Buscamos si el cliente ya tiene una factura global emitida para este mes
+      const facturaExiste = await prisma.factura.findFirst({
+        where: {
+          clienteId: cliente.id,
+          mes: stringMesCorrespondiente
         }
+      });
+
+      if (!facturaExiste) {
+        // Sumamos el precio de todos sus servicios activos contratados (Lógica Global)
+        const totalACobrar = cliente.servicios.reduce((sum, s) => sum + (s.paquete?.precio || 0), 0);
+        
+        if (totalACobrar === 0) continue;
+
+        // --- LÓGICA COHESIVA DE SALDO A FAVOR ---
+        let montoFinalFactura = totalACobrar;
+        let saldoRestanteCliente = parseFloat(cliente.saldo || 0);
+        let facturaPagada = false;
+
+        if (saldoRestanteCliente > 0) {
+          if (saldoRestanteCliente >= totalACobrar) {
+            saldoRestanteCliente -= totalACobrar;
+            montoFinalFactura = 0;
+            facturaPagada = true;
+          } else {
+            montoFinalFactura = totalACobrar - saldoRestanteCliente;
+            saldoRestanteCliente = 0;
+          }
+        }
+
+        // Tolerancia de vencimiento: 4 días corridos
+        const fechaVencimiento = new Date();
+        fechaVencimiento.setDate(hoy.getDate() + 4);
+
+        // Guardamos todo en una sola transacción segura
+        await prisma.$transaction([
+          prisma.factura.create({
+            data: {
+              clienteId: cliente.id,
+              monto: montoFinalFactura,
+              mes: stringMesCorrespondiente,
+              pagada: facturaPagada,
+              vencimiento: fechaVencimiento
+            }
+          }),
+          prisma.cliente.update({
+            where: { id: cliente.id },
+            data: { saldo: saldoRestanteCliente }
+          })
+        ]);
+
+        console.log(`✅ Factura generada para ${cliente.nombre}. Monto final: $${montoFinalFactura}. Saldo restante: $${saldoRestanteCliente}`);
       }
     }
 
     // -----------------------------------------------------------------
-    // TAREA 2: SUSPENSIÓN DINÁMICA POR VENCIMIENTO (Tu segundo archivo optimizado)
+    // TAREA 2: SUSPENSIÓN AUTOMÁTICA DE SERVICIOS POR VENCIMIENTO
     // -----------------------------------------------------------------
     console.log('⚠️ [CRON] Revisando facturas vencidas para aplicar suspensiones...');
 
+    // Buscamos facturas que ya pasaron su fecha de vencimiento y no han sido pagadas
     const facturasVencidas = await prisma.factura.findMany({
       where: {
         pagada: false,
-        vencimiento: { lt: hoy },
-        servicio: { estado: 'ACTIVO' }
+        vencimiento: { lt: hoy }
       },
-      select: { servicioId: true } 
+      include: {
+        cliente: {
+          include: { servicios: { where: { estado: 'ACTIVO' } } }
+        }
+      }
     });
 
-    if (facturasVencidas.length > 0) {
-      const servicioIds = facturasVencidas.map(f => f.servicioId);
+    let serviciosSuspendidosContador = 0;
 
-      // Suspendemos todos los servicios morosos en una sola ráfaga (updateMany)
-      const suspensiones = await prisma.servicio.updateMany({
-        where: { id: { in: servicioIds } },
-        data: { estado: 'SUSPENDIDO' }
-      });
+    for (const factura of facturasVencidas) {
+      if (factura.cliente?.servicios && factura.cliente.servicios.length > 0) {
+        // Obtenemos los IDs de todas las antenas/servicios activos de ese cliente moroso
+        const idsA規uspend = factura.cliente.servicios.map(s => s.id);
 
-      console.log(`🚨 [CRON] Se suspendieron ${suspensiones.count} servicios por falta de pago.`);
-    } else {
-      console.log('✅ [CRON] No hay servicios morosos por suspender hoy.');
+        await prisma.servicio.updateMany({
+          where: { id: { in: idsA規uspend } },
+          data: { estado: 'SUSPENDIDO' }
+        });
+
+        serviciosSuspendidosContador += idsA規uspend.length;
+      }
     }
+
+    console.log(`🚨 [CRON] Proceso de corte terminado. Se suspendieron ${serviciosSuspendidosContador} servicios.`);
 
   } catch (error) {
     console.error('❌ [CRON ERROR] Falló la automatización diaria:', error);
@@ -96,10 +133,9 @@ cron.schedule('0 0 * * *', async () => {
   console.log('=== 🤖 [CRON] FIN DE LAS TAREAS AUTOMÁTICAS ===');
 }, {
   scheduled: true,
-  timezone: "America/Mexico_City" // Control total del horario local
+  timezone: "America/Mexico_City" 
 });
 
-// Exportamos una función vacía por si la necesitas invocar o inicializar en tu server.js
 module.exports = () => {
-  console.log("⏰ Cron Jobs de Citynet inicializados correctamente.");
+  console.log("⏰ Cron Jobs unificados de Citynet inicializados correctamente.");
 };
