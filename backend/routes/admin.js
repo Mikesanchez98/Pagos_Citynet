@@ -13,7 +13,7 @@ const { validar, schemas } = require('../middleware/validar');
 const SALT_ROUNDS = 10;
 const fs = require('fs');
 
-const upload = multer({ dest: 'uploads/' });
+const upload = multer({ storage: multer.memoryStorage() });
 const prisma = new PrismaClient();
 
 // 1. Obtener todos los clientes
