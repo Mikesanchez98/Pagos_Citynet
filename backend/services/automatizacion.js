@@ -8,11 +8,11 @@ cron.schedule('0 0 * * *', async () => {
   console.log('=== 🤖 [CRON] INICIANDO TAREAS AUTOMÁTICAS DE MEDIANOCHE ===');
   
   const hoy = new Date();
-  const diaActual = hoy.getDate(); 
-  
-  const mesActual = hoy.toLocaleString('es-MX', { month: 'long' }).toUpperCase();
-  const añoActual = hoy.getFullYear();
-  const stringMesCorrespondiente = `${mesActual}-${añoActual}`;
+  const diaActual = hoy.getDate();
+
+  // Rango del mes actual: del día 1 al último día — usado para detectar duplicados
+  const inicioDeMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+  const inicioDeMesSiguiente = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 1);
 
   try {
     // -----------------------------------------------------------------
@@ -20,7 +20,6 @@ cron.schedule('0 0 * * *', async () => {
     // -----------------------------------------------------------------
     console.log(`[CRON] Buscando clientes con día de cobro: ${diaActual}...`);
     
-    // Buscamos clientes que cobren hoy y traemos sus servicios activos con sus paquetes
     const clientesDelGrupo = await prisma.cliente.findMany({
       where: { diaCobro: diaActual },
       include: { 
@@ -34,17 +33,19 @@ cron.schedule('0 0 * * *', async () => {
     for (const cliente of clientesDelGrupo) {
       if (!cliente.servicios || cliente.servicios.length === 0) continue;
 
-      // Evitamos duplicar si el cron se ejecuta dos veces por error
-      // Buscamos si el cliente ya tiene una factura global emitida para este mes
+      // Evitamos duplicar si el cron se ejecuta dos veces en el mismo mes:
+      // buscamos si ya existe una factura emitida para este cliente en el mes en curso
       const facturaExiste = await prisma.factura.findFirst({
         where: {
           clienteId: cliente.id,
-          mes: stringMesCorrespondiente
+          vencimiento: {
+            gte: inicioDeMes,
+            lt: inicioDeMesSiguiente
+          }
         }
       });
 
       if (!facturaExiste) {
-        // Sumamos el precio de todos sus servicios activos contratados (Lógica Global)
         const totalACobrar = cliente.servicios.reduce((sum, s) => sum + (s.paquete?.precio || 0), 0);
         
         if (totalACobrar === 0) continue;
@@ -75,7 +76,6 @@ cron.schedule('0 0 * * *', async () => {
             data: {
               clienteId: cliente.id,
               monto: montoFinalFactura,
-              mes: stringMesCorrespondiente,
               pagada: facturaPagada,
               vencimiento: fechaVencimiento
             }
@@ -86,7 +86,9 @@ cron.schedule('0 0 * * *', async () => {
           })
         ]);
 
-        console.log(`✅ Factura generada para ${cliente.nombre}. Monto final: $${montoFinalFactura}. Saldo restante: $${saldoRestanteCliente}`);
+        console.log(`✅ Factura generada para ${cliente.nombre}. Monto: $${montoFinalFactura}. Saldo restante: $${saldoRestanteCliente}`);
+      } else {
+        console.log(`⏭️  Factura de este mes ya existe para ${cliente.nombre}, se omite.`);
       }
     }
 
@@ -95,7 +97,6 @@ cron.schedule('0 0 * * *', async () => {
     // -----------------------------------------------------------------
     console.log('⚠️ [CRON] Revisando facturas vencidas para aplicar suspensiones...');
 
-    // Buscamos facturas que ya pasaron su fecha de vencimiento y no han sido pagadas
     const facturasVencidas = await prisma.factura.findMany({
       where: {
         pagada: false,
@@ -112,15 +113,14 @@ cron.schedule('0 0 * * *', async () => {
 
     for (const factura of facturasVencidas) {
       if (factura.cliente?.servicios && factura.cliente.servicios.length > 0) {
-        // Obtenemos los IDs de todas las antenas/servicios activos de ese cliente moroso
-        const idsA規uspend = factura.cliente.servicios.map(s => s.id);
+        const idsSuspender = factura.cliente.servicios.map(s => s.id);
 
         await prisma.servicio.updateMany({
-          where: { id: { in: idsA規uspend } },
+          where: { id: { in: idsSuspender } },
           data: { estado: 'SUSPENDIDO' }
         });
 
-        serviciosSuspendidosContador += idsA規uspend.length;
+        serviciosSuspendidosContador += idsSuspender.length;
       }
     }
 

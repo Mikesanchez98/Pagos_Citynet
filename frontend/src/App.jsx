@@ -1,5 +1,5 @@
 // src/App.jsx
-import { BrowserRouter as Router, Routes, Route, useNavigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import PaymentOptions from './pages/PaymentOptions';
@@ -12,24 +12,55 @@ import Logistica from './pages/Logistica';
 import DetalleCliente from './pages/DetalleCliente';
 import CobranzaMasiva from './pages/CobranzaMasiva';
 import Paquetes from './pages/Paquetes';
+import PrivateRoute from './components/PrivateRoute';
+import AdminRoute from './components/AdminRoute';
 
 function App() {
   return (
     <Router>
       <Routes>
+        {/* Pública */}
         <Route path="/login" element={<Login />} />
-        <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/pagar" element={<PaymentOptions />} />
-        <Route path="/pagar/ticket" element={<PaymentTicket />} />
-        <Route path="/pagar/tarjeta" element={<CardPayment />} />
-        <Route path="/admin" element={<AdminPanel />} />
-        <Route path="/admin/torres" element={<TorresPanel />} />
-        <Route path="/admin/mapa" element={<MapaPanel />} />
-        <Route path="/admin/logistica" element={<Logistica />} />
-        <Route path="/admin/cliente/:id" element={<DetalleCliente />} />
-        <Route path="/admin/cobranza" element={<CobranzaMasiva />} />
-        <Route path="/admin/paquetes" element={<Paquetes />} />
-        <Route path="*" element={<Login />} />
+
+        {/* Rutas del portal de cliente — requieren sesión con rol CLIENTE */}
+        <Route path="/dashboard" element={
+          <PrivateRoute><Dashboard /></PrivateRoute>
+        } />
+        <Route path="/pagar" element={
+          <PrivateRoute><PaymentOptions /></PrivateRoute>
+        } />
+        <Route path="/pagar/ticket" element={
+          <PrivateRoute><PaymentTicket /></PrivateRoute>
+        } />
+        <Route path="/pagar/tarjeta" element={
+          <PrivateRoute><CardPayment /></PrivateRoute>
+        } />
+
+        {/* Rutas del panel admin — requieren sesión con rol ADMIN */}
+        <Route path="/admin" element={
+          <AdminRoute><AdminPanel /></AdminRoute>
+        } />
+        <Route path="/admin/torres" element={
+          <AdminRoute><TorresPanel /></AdminRoute>
+        } />
+        <Route path="/admin/mapa" element={
+          <AdminRoute><MapaPanel /></AdminRoute>
+        } />
+        <Route path="/admin/logistica" element={
+          <AdminRoute><Logistica /></AdminRoute>
+        } />
+        <Route path="/admin/cliente/:id" element={
+          <AdminRoute><DetalleCliente /></AdminRoute>
+        } />
+        <Route path="/admin/cobranza" element={
+          <AdminRoute><CobranzaMasiva /></AdminRoute>
+        } />
+        <Route path="/admin/paquetes" element={
+          <AdminRoute><Paquetes /></AdminRoute>
+        } />
+
+        {/* Cualquier ruta desconocida → login */}
+        <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     </Router>
   );

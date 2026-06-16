@@ -12,10 +12,15 @@ router.get('/perfil', verificarToken, async (req, res) => {
     const cliente = await prisma.cliente.findUnique({
       where: { usuarioId: req.usuarioId },
       include: { 
-        usuario: true, // Para obtener el email
+        usuario: true,
         servicios: {
-          include: { facturas: { where: { pagada: false } } }
-        } 
+          include: { 
+            paquete: true  // Traer datos del paquete del servicio
+          }
+        },
+        facturas: { 
+          where: { pagada: false }  // ← Facturas están a nivel de Cliente, no Servicio
+        }
       }
     });
 
@@ -23,27 +28,41 @@ router.get('/perfil', verificarToken, async (req, res) => {
       return res.status(404).json({ error: "Datos de servicio incompletos" });
     }
 
-    // Suma robusta de todos los servicios
-    const facturasPendientes = cliente.servicios.flatMap(s => s.facturas);
-    const montoPendiente = facturasPendientes.reduce((acc, f) => acc + Number(f.monto), 0);
+    // Suma de facturas pendientes
+    const montoPendiente = cliente.facturas.reduce((acc, f) => acc + Number(f.monto), 0);
     
     // Tomamos datos representativos del primer servicio para la UI
     const servicioPrincipal = cliente.servicios[0];
 
     res.json({
-      // Datos originales
+      // Datos del cliente
+      id: cliente.id,
       nombre: cliente.nombre,
       numCliente: cliente.numCliente,
-      plan: servicioPrincipal.plan,
-      ip: servicioPrincipal.direccionIp,
+      
+      // Datos del plan/paquete (del primer servicio)
+      plan: servicioPrincipal.paquete?.nombre || 'Plan no especificado',
+      ip: servicioPrincipal.direccionIp || '0.0.0.0',
+      
+      // Datos financieros
       montoPendiente: montoPendiente,
-      vencimiento: facturasPendientes[0]?.vencimiento || null,
+      vencimiento: cliente.facturas[0]?.vencimiento || null,
+      
+      // Estado del servicio
       estado: servicioPrincipal.estado,
       
-      // 👇 NUEVOS DATOS AGREGADOS PARA EL FRONTEND 👇
-      direccion: cliente.direccion,
-      telefono: cliente.telefono,
-      correo: cliente.usuario.email 
+      // Información de contacto
+      direccion: cliente.direccion || servicioPrincipal.direccion || 'Dirección no disponible',
+      telefono: cliente.telefono || 'Teléfono no registrado',
+      correo: cliente.usuario.email || cliente.email || 'Correo no registrado',
+      
+      // Datos adicionales para otros usos
+      servicios: cliente.servicios.map(s => ({
+        id: s.id,
+        estado: s.estado,
+        paquete: s.paquete?.nombre,
+        precio: s.paquete?.precio
+      }))
     });
   } catch (error) {
     console.error("[Error Perfil]:", error);

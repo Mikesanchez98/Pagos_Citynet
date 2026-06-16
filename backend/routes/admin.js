@@ -4,21 +4,20 @@ const { PrismaClient } = require('@prisma/client');
 const { verificarToken } = require('../middleware/auth');
 const { verificarAdmin } = require('../middleware/auth');
 const { enviarMensajeTwilio } = require('../services/whatsapp');
-const { parse } = require('dotenv');
 const PDFDocument = require('pdfkit');
 const multer = require('multer');
 const csv = require('csv-parser');
+const bcrypt = require('bcrypt');
+const { validar, schemas } = require('../middleware/validar');
+
+const SALT_ROUNDS = 10;
 const fs = require('fs');
 
 const upload = multer({ dest: 'uploads/' });
 const prisma = new PrismaClient();
 
-const esAdmin = (req, res, next) => {
-  next(); 
-};
-
 // 1. Obtener todos los clientes
-router.get('/clientes', verificarToken, async (req, res) => {
+router.get('/clientes', verificarToken, verificarAdmin, async (req, res) => {
   try {
     const clientes = await prisma.cliente.findMany({
       include: { 
@@ -39,7 +38,7 @@ router.get('/clientes', verificarToken, async (req, res) => {
 });
 
 // 2. Obtener un cliente específico (Expediente)
-router.get('/cliente/:id', verificarToken, async (req, res) => {
+router.get('/cliente/:id', verificarToken, verificarAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     
@@ -68,7 +67,7 @@ router.get('/cliente/:id', verificarToken, async (req, res) => {
 });
 
 // POST /api/admin/registrar-cliente
-router.post('/registrar-cliente', verificarToken, async (req, res) => { 
+router.post('/registrar-cliente', verificarToken, verificarAdmin, validar(schemas.registrarCliente), async (req, res) => { 
   const { email, password, nombre, numCliente, paqueteId, ip, torreId, direccion, latitud, longitud, telefono } = req.body;
 
   try {
@@ -76,9 +75,11 @@ router.post('/registrar-cliente', verificarToken, async (req, res) => {
     let diaRegistro = fechaActual.getDate(); 
     if (diaRegistro > 28) diaRegistro = 28;
 
+    const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
+
     const resultado = await prisma.$transaction(async (tx) => {
       const usuario = await tx.usuario.create({
-        data: { email, password, rol: 'CLIENTE' }
+        data: { email, password: passwordHash, rol: 'CLIENTE' }
       });
 
       // ⚠️ ACTUALIZADO: Creación anidada. Los datos físicos se van al Servicio.
@@ -117,7 +118,7 @@ router.post('/registrar-cliente', verificarToken, async (req, res) => {
 });
 
 // PATCH /api/admin/servicio/:id/estatus
-router.patch('/servicio/:id/estatus', verificarToken, async (req, res) => {
+router.patch('/servicio/:id/estatus', verificarToken, verificarAdmin, async (req, res) => {
   const { id } = req.params;
   const { nuevoEstado } = req.body; // "ACTIVO" o "SUSPENDIDO"
 
@@ -133,7 +134,7 @@ router.patch('/servicio/:id/estatus', verificarToken, async (req, res) => {
 });
 
 // POST /api/admin/cliente/:id/generar-factura (⚠️ AHORA ES POR CLIENTE, NO POR SERVICIO)
-router.post('/cliente/:id/generar-factura', async (req, res) => {
+router.post('/cliente/:id/generar-factura', verificarToken, verificarAdmin, async (req, res) => {
   const clienteId = parseInt(req.params.id);
   if (isNaN(clienteId)) return res.status(400).json({ error: 'ID de cliente inválido' });
 
@@ -201,7 +202,7 @@ router.post('/cliente/:id/generar-factura', async (req, res) => {
 });
 
 // POST /api/admin/servicio/:id/generar-factura (🟢 NUEVA: FACTURACIÓN INDIVIDUAL)
-router.post('/servicio/:id/generar-factura', async (req, res) => {
+router.post('/servicio/:id/generar-factura', verificarToken, verificarAdmin, async (req, res) => {
   const servicioId = parseInt(req.params.id);
   if (isNaN(servicioId)) return res.status(400).json({ error: 'ID de servicio inválido' });
 
@@ -268,7 +269,7 @@ router.post('/servicio/:id/generar-factura', async (req, res) => {
 });
 
 // POST: Agregar un NUEVO servicio a un cliente existente
-router.post('/cliente/:id/servicio', verificarToken, async (req, res) => {
+router.post('/cliente/:id/servicio', verificarToken, verificarAdmin, async (req, res) => {
   const { id } = req.params; // Este es el ID del cliente dueño
   const { direccion, ip, torreId, latitud, longitud, paqueteId } = req.body;
 
@@ -303,14 +304,14 @@ router.post('/cliente/:id/servicio', verificarToken, async (req, res) => {
 });
 
 // PUT RUTA PARA ACTUALIZAR CLIENTE
-router.put('/cliente/:id', verificarToken, async (req, res) => {
+router.put('/cliente/:id', verificarToken, verificarAdmin, async (req, res) => {
   const { id } = req.params;
   const { nombre, paqueteId, ip, diaCobro, torreId, direccion, latitud, longitud, telefono, email, password } = req.body;
 
   try {
     let datosUsuario = { email: email }; 
     if (password && password.trim() !== "") {
-      datosUsuario.password = password; 
+      datosUsuario.password = await bcrypt.hash(password, SALT_ROUNDS);
     }
 
     // ⚠️ ACTUALIZADO: Encontramos su primer servicio para actualizarlo
@@ -356,7 +357,7 @@ router.put('/cliente/:id', verificarToken, async (req, res) => {
 });
 
 // Marcar factura como pagada manualmente
-router.patch('/factura/:id/pagar', async (req, res) => {
+router.patch('/factura/:id/pagar', verificarToken, verificarAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     
@@ -393,7 +394,7 @@ router.patch('/factura/:id/pagar', async (req, res) => {
 });
 
 // Eliminar factura
-router.delete('/factura/:id', verificarToken, async (req, res) => {
+router.delete('/factura/:id', verificarToken, verificarAdmin, async (req, res) => {
   try {
     await prisma.factura.delete({
       where: { id: parseInt(req.params.id) }
@@ -513,7 +514,7 @@ router.get('/torres', verificarToken, async (req, res) => {
 });
 
 // CREAR UNA NUEVA TORRE
-router.post('/torres', verificarToken, async (req, res) => {
+router.post('/torres', verificarToken, verificarAdmin, async (req, res) => {
   const { nombre, latitud, longitud } = req.body;
   try {
     const nuevaTorre = await prisma.torre.create({
@@ -530,7 +531,7 @@ router.post('/torres', verificarToken, async (req, res) => {
   }
 });
 
-router.put('/torres/:id', verificarToken, async (req, res) => {
+router.put('/torres/:id', verificarToken, verificarAdmin, async (req, res) => {
   const { id } = req.params;
   const { nombre, latitud, longitud } = req.body;
   try {
@@ -552,7 +553,7 @@ router.put('/torres/:id', verificarToken, async (req, res) => {
 // RUTAS DE PAGOS
 // ==========================================
 // Registrar Nuevo Pago (Desde panel general)
-router.post('/pagos', async (req, res) => {
+router.post('/pagos', verificarToken, verificarAdmin, validar(schemas.registrarPago), async (req, res) => {
   const { clienteId, monto, mesCorrespondiente, metodoPago, notas } = req.body;
 
   try {
@@ -619,7 +620,7 @@ router.post('/pagos', async (req, res) => {
 });
 
 // Historial general de pagos
-router.get('/pagos/historial', verificarToken, async (req, res) => {
+router.get('/pagos/historial', verificarToken, verificarAdmin, async (req, res) => {
   try {
     const { filtro } = req.query; 
     const ahora = new Date();
@@ -649,7 +650,7 @@ router.get('/pagos/historial', verificarToken, async (req, res) => {
 });
 
 // Obtener el historial de pagos de un cliente específico
-router.get('/pagos/:clienteId', verificarToken, async (req, res) => {
+router.get('/pagos/:clienteId', verificarToken, verificarAdmin, async (req, res) => {
   const { clienteId } = req.params;
   try {
     const historial = await prisma.pago.findMany({
@@ -663,7 +664,7 @@ router.get('/pagos/:clienteId', verificarToken, async (req, res) => {
 });
 
 // --- RUTA DE ESTADÍSTICAS (Logistica) ---
-router.get('/dashboard-stats', verificarToken, async (req, res) => {
+router.get('/dashboard-stats', verificarToken, verificarAdmin, async (req, res) => {
   try {
     const totalClientes = await prisma.cliente.count();
     
@@ -701,7 +702,7 @@ router.get('/dashboard-stats', verificarToken, async (req, res) => {
 });
 
 // Generacion de pdf (Pago)
-router.get('/pago/:id/pdf', verificarToken, async (req, res) => {
+router.get('/pago/:id/pdf', verificarToken, verificarAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const pago = await prisma.pago.findUnique({
@@ -761,7 +762,7 @@ router.get('/pago/:id/pdf', verificarToken, async (req, res) => {
 });
 
 // Registrar un pago desde el detalle del cliente
-router.post('/cliente/:id/pagar', verificarToken, async (req, res) => {
+router.post('/cliente/:id/pagar', verificarToken, verificarAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const { monto } = req.body;
@@ -825,7 +826,7 @@ router.post('/cliente/:id/pagar', verificarToken, async (req, res) => {
 });
 
 // CANCELAR UN PAGO REALIZADO (CASCADA INVERSA)
-router.post('/pagos/:id/cancelar', verificarToken, async (req, res) => {
+router.post('/pagos/:id/cancelar', verificarToken, verificarAdmin, async (req, res) => {
   const { id } = req.params;
   try {
     const pago = await prisma.pago.findUnique({
@@ -932,7 +933,7 @@ router.get('/factura/:id/pdf', async (req, res) => {
 // 🛠️ MÓDULO DE SOPORTE TÉCNICO (TICKETS)
 // ==========================================
 // (El módulo de tickets se mantiene idéntico, ya que su relación con Cliente no cambió)
-router.get('/tickets', async (req, res) => {
+router.get('/tickets', verificarToken, verificarAdmin, async (req, res) => {
   try {
     const tickets = await prisma.ticket.findMany({
       include: { cliente: { select: { nombre: true, telefono: true } } }, // Quité direccion porque ahora está en servicio, pero no hace falta en la lista global
@@ -957,7 +958,7 @@ router.post('/cliente/:id/tickets', async (req, res) => {
   }
 });
 
-router.put('/tickets/:id', async (req, res) => {
+router.put('/tickets/:id', verificarToken, verificarAdmin, async (req, res) => {
   const { id } = req.params;
   const { estatus, notasAdmin, prioridad } = req.body;
   try {
@@ -974,7 +975,7 @@ router.put('/tickets/:id', async (req, res) => {
 // ==========================================
 // 📥 IMPORTACIÓN MASIVA DE CSV
 // ==========================================
-router.post('/clientes/importar', verificarToken, upload.single('file'), async (req, res) => {
+router.post('/clientes/importar', verificarToken, verificarAdmin, upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No se subió ningún archivo.' });
   const resultados = [];
   
@@ -993,10 +994,13 @@ router.post('/clientes/importar', verificarToken, upload.single('file'), async (
           const paquete = await prisma.paquete.findFirst({ where: { nombre: plan_nombre } });
           const paqueteId = paquete ? paquete.id : null;
 
+          const passwordPlana = password || '12345678';
+          const passwordHash = await bcrypt.hash(passwordPlana, SALT_ROUNDS);
+
           const nuevoUsuario = await prisma.usuario.create({
             data: {
               email: email || `${numCliente.toLowerCase()}@citynet.com`,
-              password: password || '12345678',
+              password: passwordHash,
               rol: 'CLIENTE'
             }
           });
@@ -1147,7 +1151,7 @@ router.get('/cron/procesar-dia', async (req, res) => {
 // ==========================================
 // RUTAS DE COBRANZA MASIVA (TWILIO)
 // ==========================================
-router.post('/cobranza/enviar-individual', verificarToken, async (req, res) => {
+router.post('/cobranza/enviar-individual', verificarToken, verificarAdmin, async (req, res) => {
   try {
     const { clienteId } = req.body;
     if (!clienteId) return res.status(400).json({ error: 'Falta el ID del cliente' });
@@ -1169,7 +1173,7 @@ router.post('/cobranza/enviar-individual', verificarToken, async (req, res) => {
   }
 });
 
-router.post('/cobranza/enviar-masivo', verificarToken, async (req, res) => {
+router.post('/cobranza/enviar-masivo', verificarToken, verificarAdmin, async (req, res) => {
   try {
     const { clientesIds } = req.body; 
     if (!clientesIds || !Array.isArray(clientesIds) || clientesIds.length === 0) {

@@ -3,14 +3,34 @@ const express = require('express');
 const router = express.Router();
 const { PrismaClient } = require('@prisma/client');
 const jwt = require('jsonwebtoken');
+const bcrypt = require('bcrypt');
+const rateLimit = require('express-rate-limit');
 
 const prisma = new PrismaClient();
-const JWT_SECRET = process.env.JWT_SECRET || 'clave_secreta_citynet';
+
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  console.error('❌ [FATAL] JWT_SECRET no definido en variables de entorno.');
+  process.exit(1);
+}
+
+// Máximo 5 intentos de login por IP cada 15 minutos
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutos
+  max: 5,
+  standardHeaders: true,  // Envía headers RateLimit-* al cliente
+  legacyHeaders: false,
+  message: {
+    error: 'Demasiados intentos de inicio de sesión. Intenta de nuevo en 15 minutos.'
+  },
+  handler: (req, res, next, options) => {
+    console.warn(`⚠️ [RATE LIMIT] IP bloqueada por múltiples intentos de login: ${req.ip}`);
+    res.status(429).json(options.message);
+  }
+});
 
 // RUTA: POST /api/auth/login
-// backend/routes/auth.js
-
-router.post('/login', async (req, res) => {
+router.post('/login', loginLimiter, async (req, res) => {
   const { identifier, password } = req.body;
 
   try {
@@ -24,13 +44,14 @@ router.post('/login', async (req, res) => {
       include: { cliente: true }
     });
 
-    if (!usuario || usuario.password !== password) {
+    const passwordValida = usuario && await bcrypt.compare(password, usuario.password);
+    if (!passwordValida) {
       return res.status(401).json({ error: 'Credenciales inválidas' });
     }
 
     const token = jwt.sign(
       { usuarioId: usuario.id, rol: usuario.rol, clienteId: usuario.cliente?.id },
-      process.env.JWT_SECRET || 'clave_secreta_citynet',
+      JWT_SECRET,
       { expiresIn: '8h' }
     );
 

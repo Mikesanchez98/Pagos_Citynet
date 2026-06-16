@@ -1,16 +1,14 @@
 // backend/middleware/auth.js
 const jwt = require('jsonwebtoken');
 
-// 1. FAIL-FAST: Si no hay secreto en el entorno, detenemos el servidor. Nada de fallbacks.
-const JWT_SECRET = process.env.JWT_SECRET;
-if (!JWT_SECRET) {
-  console.error("❌ [FATAL ERROR] JWT_SECRET no está definido en las variables de entorno.");
-  process.exit(1); 
-}
-
 const verificarToken = (req, res, next) => {
-  const token = req.headers['authorization']?.split(' ')[1];
+  const JWT_SECRET = process.env.JWT_SECRET;
+  if (!JWT_SECRET) {
+    console.error("❌ [FATAL] JWT_SECRET no definido.");
+    return res.status(500).json({ error: 'Error de configuración del servidor.' });
+  }
 
+  const token = req.headers['authorization']?.split(' ')[1];
   if (!token) {
     return res.status(403).json({ error: 'Acceso denegado. Token no proporcionado.' });
   }
@@ -19,8 +17,8 @@ const verificarToken = (req, res, next) => {
     const decoded = jwt.verify(token, JWT_SECRET);
     req.usuarioId = decoded.usuarioId;
     req.clienteId = decoded.clienteId;
-    req.rol = decoded.rol; // <-- AÑADIDO: Extraemos el rol del token
-    next(); 
+    req.rol = decoded.rol;
+    next();
   } catch (error) {
     return res.status(401).json({ error: 'Token inválido o expirado. Inicia sesión nuevamente.' });
   }

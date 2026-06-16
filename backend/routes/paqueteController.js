@@ -1,5 +1,6 @@
 // backend/routes/paqueteController.js
 const { PrismaClient } = require('@prisma/client');
+const { schemas } = require('../middleware/validar');
 const prisma = new PrismaClient();
 
 // 1. Obtener todos los paquetes
@@ -16,15 +17,16 @@ exports.obtenerPaquetes = async (req, res) => {
 
 // 2. Crear un nuevo paquete
 exports.crearPaquete = async (req, res) => {
-  const { nombre, velocidad, precio, descripcion } = req.body;
+  const resultado = schemas.paquete.safeParse(req.body);
+  if (!resultado.success) {
+    const detalles = resultado.error.errors.map(e => ({ campo: e.path.join('.'), mensaje: e.message }));
+    return res.status(400).json({ error: 'Datos inválidos', detalles });
+  }
+
+  const { nombre, velocidad, precio, descripcion } = resultado.data;
   try {
     const nuevoPaquete = await prisma.paquete.create({
-      data: {
-        nombre,
-        velocidad: parseInt(velocidad),
-        precio: parseFloat(precio),
-        descripcion
-      }
+      data: { nombre, velocidad, precio, descripcion }
     });
     res.status(201).json(nuevoPaquete);
   } catch (error) {
@@ -35,17 +37,18 @@ exports.crearPaquete = async (req, res) => {
 // 3. Actualizar un paquete existente
 exports.actualizarPaquete = async (req, res) => {
   const { id } = req.params;
-  const { nombre, velocidad, precio, descripcion } = req.body;
-  
+
+  const resultado = schemas.paquete.safeParse(req.body);
+  if (!resultado.success) {
+    const detalles = resultado.error.errors.map(e => ({ campo: e.path.join('.'), mensaje: e.message }));
+    return res.status(400).json({ error: 'Datos inválidos', detalles });
+  }
+
+  const { nombre, velocidad, precio, descripcion } = resultado.data;
   try {
     const paqueteActualizado = await prisma.paquete.update({
-      where: { id },
-      data: {
-        nombre,
-        velocidad: parseInt(velocidad),
-        precio: parseFloat(precio),
-        descripcion
-      }
+      where: { id: parseInt(id) },
+      data: { nombre, velocidad, precio, descripcion }
     });
     res.json(paqueteActualizado);
   } catch (error) {
