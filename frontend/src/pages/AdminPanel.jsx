@@ -528,7 +528,7 @@ const AdminPanel = () => {
               <div className="flex flex-wrap justify-center gap-2">
                   <button
                     onClick={ejecutarCronManual}
-                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded shadow transition duration-200"
+                    className="bg-blue-500 text-white px-5 py-3 rounded-xl text-[10px] font-black uppercase hover:bg-blue-600 transition-all shadow-md cursor-pointer flex items-center gap-2 tracking-wider"
                   >
                     🤖 Ejecutar Procesos de Hoy
                   </button>
