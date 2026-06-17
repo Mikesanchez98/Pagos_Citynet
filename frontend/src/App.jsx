@@ -1,5 +1,6 @@
 // src/App.jsx
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import Landing from './pages/Landing';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import PaymentOptions from './pages/PaymentOptions';
@@ -19,7 +20,8 @@ function App() {
   return (
     <Router>
       <Routes>
-        {/* Pública */}
+        {/* Públicas */}
+        <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />
 
         {/* Rutas del portal de cliente — requieren sesión con rol CLIENTE */}
@@ -59,8 +61,8 @@ function App() {
           <AdminRoute><Paquetes /></AdminRoute>
         } />
 
-        {/* Cualquier ruta desconocida → login */}
-        <Route path="*" element={<Navigate to="/login" replace />} />
+        {/* Cualquier ruta desconocida → landing */}
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Router>
   );
