@@ -60,9 +60,12 @@ model Servicio {
   id          Int      @id @default(autoincrement())
   estado      String   @default("ACTIVO")
   
+  // Vínculo directo con PPPoE secret en MikroTik
+  mikrotikUser String? @unique
+
   // 🆕 MAC ADDRESS
   macAddress  String?
-  
+
   direccionIp String?  @default("192.168.1.1")
   
   // 📍 Datos físicos

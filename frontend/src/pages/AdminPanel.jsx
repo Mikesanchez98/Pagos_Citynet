@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import api from '../api/axios';
 import { useNavigate } from 'react-router-dom';
 import logoCitynet from '../assets/logo-citynet-antiguo.png';
+import MapaPinSelector from '../components/MapaPinSelector';
 
 const AdminPanel = () => {
   const navigate = useNavigate();
@@ -14,6 +15,7 @@ const AdminPanel = () => {
   const [torresDisponibles, setTorresDisponibles] = useState([]);
   const [paquetesDisponibles, setPaquetesDisponibles] = useState([]);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [geocodingKey, setGeocodingKey] = useState(0);
   
   // ESTADOS PARA BÚSQUEDA Y FILTROS
   const [busqueda, setBusqueda] = useState('');
@@ -89,6 +91,20 @@ const AdminPanel = () => {
     }
   };
 
+  const geocodificarDireccion = async (direccion) => {
+    if (!direccion || direccion.trim().length < 5) return;
+    try {
+      const token = localStorage.getItem('token');
+      const res = await api.get(`/admin/geocodificar?q=${encodeURIComponent(direccion)}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setForm(prev => ({ ...prev, latitud: res.data.latitud, longitud: res.data.longitud }));
+      setGeocodingKey(k => k + 1); // re-centra el mapa sin re-montarlo
+    } catch (err) {
+      console.warn('No se pudo geocodificar la dirección:', err.response?.data?.error || err.message);
+    }
+  };
+
   const obtenerTorresParaSelect = async () => {
     try {
       const token = localStorage.getItem('token');
@@ -133,10 +149,11 @@ const AdminPanel = () => {
 
   const abrirModalPago = (cliente) => {
     setClienteActivo(cliente);
-    const precioSugerido = cliente.servicios?.[0]?.precio || '';
+    const deudaTotal = (cliente.facturas || []).filter(f => !f.pagada).reduce((t, f) => t + parseFloat(f.monto || 0), 0);
+    const precioSugerido = deudaTotal > 0 ? deudaTotal : (cliente.servicios?.[0]?.paquete?.precio || '');
     setPagoData({
-      monto: precioSugerido, 
-      mesCorrespondiente: 'Abril 2026',
+      monto: precioSugerido,
+      mesCorrespondiente: new Date().toLocaleString('es-MX', { month: 'long', year: 'numeric' }),
       metodoPago: 'Efectivo',
       notas: ''
     });
@@ -231,7 +248,13 @@ const AdminPanel = () => {
       }
       cancelarEdicion();
       obtenerClientes();
-    } catch (err) { setStatus({ msg: 'Error en la operación', type: 'error' }); }
+    } catch (err) {
+      const msg = err.response?.data?.detalles
+        ? err.response.data.detalles.map(e => `${e.campo}: ${e.mensaje}`).join(' | ')
+        : err.response?.data?.error || 'Error en la operación';
+      setStatus({ msg, type: 'error' });
+      alert(`Error: ${msg}`);
+    }
   };
 
   const cancelarEdicion = () => {
@@ -271,12 +294,14 @@ const AdminPanel = () => {
         torreId: servicioActual.torreId || '',
         latitud: servicioActual.latitud || '',
         longitud: servicioActual.longitud || '',
+
         ip: servicioActual.direccionIp || '', 
         
         // 📦 Datos que vienen del Paquete (anidado en el servicio)
         paqueteId: servicioActual.paqueteId || '',
-        precio: servicioActual.paquete ? servicioActual.paquete.precio : '', 
+        precio: servicioActual.paquete ? servicioActual.paquete.precio : '',
       });
+      setGeocodingKey(k => k + 1); // centra el mapa en las coords cargadas
 
     } catch (error) {
       console.error("Error al cargar detalles del cliente:", error);
@@ -357,23 +382,20 @@ const AdminPanel = () => {
   // LÓGICA DE FILTRADO Y BÚSQUEDA
   const clientesFiltrados = clientes?.filter(cliente => {
     const texto = busqueda.toLowerCase();
-    const coincideTexto = 
-      cliente.nombre?.toLowerCase().includes(texto) || 
+    const coincideTexto =
+      cliente.nombre?.toLowerCase().includes(texto) ||
       cliente.numCliente?.toLowerCase().includes(texto);
 
     if (!coincideTexto) return false;
 
-    const servicioPrincipal = cliente.servicios?.[0];
-    const facturas = servicioPrincipal?.facturas || [];
-    const estadoServicio = servicioPrincipal?.estado || 'SIN SERVICIO';
-    
-    const esDeudor = facturas.some(f => !f.pagada); 
+    const estadoServicio = cliente.servicios?.[0]?.estado || 'SIN SERVICIO';
+    const esDeudor = (cliente.facturas || []).some(f => !f.pagada);
 
     if (filtro === 'DEUDORES') return esDeudor;
     if (filtro === 'ACTIVOS') return estadoServicio === 'ACTIVO';
     if (filtro === 'SUSPENDIDOS') return estadoServicio === 'SUSPENDIDO';
-    
-    return true; 
+
+    return true;
   }) || [];
 
   if (loading) return <div className="p-10 text-center font-bold text-slate-500 uppercase tracking-widest">Cargando Sistema...</div>;
@@ -434,7 +456,14 @@ const AdminPanel = () => {
             <form onSubmit={handleGuardar} className="space-y-4">
               <input required type="text" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold" placeholder="Nombre del Cliente" value={form.nombre} onChange={e => setForm({...form, nombre: e.target.value})} />
               
-              <input type="text" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold placeholder:text-slate-400" placeholder="Dirección (Ej: Calle 5 de Mayo #123)" value={form.direccion} onChange={e => setForm({...form, direccion: e.target.value})} />
+              <input
+                type="text"
+                className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold placeholder:text-slate-400"
+                placeholder="Dirección (Ej: Calle 5 de Mayo #123)"
+                value={form.direccion}
+                onChange={e => setForm({...form, direccion: e.target.value})}
+                onBlur={e => geocodificarDireccion(e.target.value)}
+              />
 
               <select className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-[11px] font-black text-slate-700" value={form.torreId} onChange={e => setForm({...form, torreId: e.target.value})}>
                 <option value="">-- Selecciona una Torre (Opcional) --</option>
@@ -447,6 +476,13 @@ const AdminPanel = () => {
                 <input type="number" step="any" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold placeholder:text-slate-400" placeholder="Latitud" value={form.latitud} onChange={e => setForm({...form, latitud: e.target.value})} />
                 <input type="number" step="any" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold placeholder:text-slate-400" placeholder="Longitud" value={form.longitud} onChange={e => setForm({...form, longitud: e.target.value})} />
               </div>
+
+              <MapaPinSelector
+                lat={form.latitud}
+                lng={form.longitud}
+                triggerKey={geocodingKey}
+                onChange={(lat, lng) => setForm(prev => ({ ...prev, latitud: lat, longitud: lng }))}
+              />
 
               <div className="grid grid-cols-2 gap-4">
                 <select 
@@ -505,8 +541,15 @@ const AdminPanel = () => {
               </div>
 
               <input required type="text" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold disabled:opacity-40" placeholder="Nombre de Usuario" value={form.email} onChange={e => setForm({...form, email: e.target.value})} />
-              
-              <input required type="text" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold" placeholder="Contraseña Temporal" value={form.password} onChange={e => setForm({...form, password: e.target.value})} />
+
+              <input
+                required={!editandoId}
+                type="text"
+                className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold"
+                placeholder={editandoId ? "Contraseña (dejar vacío para no cambiar)" : "Contraseña Temporal"}
+                value={form.password}
+                onChange={e => setForm({...form, password: e.target.value})}
+              />
               
               <button type="submit" className="w-full bg-slate-900 text-white py-5 rounded-3xl font-black text-sm tracking-widest hover:bg-blue-600 transition-all shadow-lg shadow-slate-200 uppercase">
                 {editandoId ? 'Guardar Cambios' : 'Registrar Cliente'}
@@ -613,23 +656,22 @@ const AdminPanel = () => {
                     <td className="p-6">
                       <div className="flex flex-col items-start gap-2">
                         <div className="flex flex-wrap gap-2">
-                          {c.servicios?.[0]?.facturas?.filter(f => !f.pagada).map(f => (
+                          {(c.facturas || []).filter(f => !f.pagada).map(f => (
                             <div key={f.id} className="flex items-center gap-2 bg-slate-50 border border-slate-200 pl-3 pr-1 py-1 rounded-xl">
-                              <span className="text-[10px] font-black text-slate-700">${f.monto}</span>
+                              <span className="text-[10px] font-black text-slate-700">${Number(f.monto).toFixed(2)}</span>
                               <div className="flex gap-1">
-                                {/* <button onClick={() => marcarComoPagada(f.id)} className="bg-green-500 text-white p-1 rounded-lg text-[8px] font-black uppercase px-2">Pagado</button> */}
                                 <button onClick={() => eliminarFactura(f.id)} className="bg-white text-red-500 border border-red-100 p-1 rounded-lg text-[8px] font-black uppercase px-2">X</button>
                               </div>
                             </div>
                           ))}
-                          {(!c.servicios?.[0]?.facturas || c.servicios[0].facturas.filter(f => !f.pagada).length === 0) && (
+                          {(c.facturas || []).filter(f => !f.pagada).length === 0 && (
                             <span className="text-[10px] font-black text-green-400 bg-green-50 px-3 py-1 rounded-full uppercase">Al día ✅</span>
                           )}
                         </div>
                         
                         {c.servicios?.[0] && (
-                          <button 
-                            onClick={() => abrirModalFactura(c.servicios?.[0]?.id, c.servicios?.[0]?.precio, c.nombre)} 
+                          <button
+                            onClick={() => abrirModalFactura(c.servicios[0].id, c.servicios[0].paquete?.precio, c.nombre)}
                             className="mt-1 text-[10px] font-black text-slate-500 hover:text-blue-600 border border-slate-200 hover:border-blue-200 bg-white hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-all flex items-center gap-1 uppercase"
                           >
                             <span>+ Generar Cobro</span>
@@ -652,15 +694,21 @@ const AdminPanel = () => {
                            <span className="text-[10px] font-black text-slate-400 group-hover:text-blue-500 uppercase">Editar</span>
                         </button>
                         
-                        <button 
-                          onClick={() => toggleEstatus(c.servicios?.[0]?.id, c.servicios?.[0]?.estado)}
-                          className={`px-4 py-2 rounded-2xl text-[10px] font-black uppercase transition-all ${
-                            c.servicios?.[0]?.estado === 'ACTIVO' 
-                            ? 'bg-green-50 text-green-600 border border-green-100 hover:bg-red-50 hover:text-red-600' 
-                            : 'bg-red-50 text-red-600 border border-red-100 hover:bg-green-50 hover:text-green-600'
-                          }`}>
-                          {c.servicios?.[0]?.estado}
-                        </button>
+                        {c.servicios?.[0]?.id ? (
+                          <button
+                            onClick={() => toggleEstatus(c.servicios[0].id, c.servicios[0].estado)}
+                            className={`px-4 py-2 rounded-2xl text-[10px] font-black uppercase transition-all ${
+                              c.servicios[0].estado === 'ACTIVO'
+                              ? 'bg-green-50 text-green-600 border border-green-100 hover:bg-red-50 hover:text-red-600'
+                              : 'bg-red-50 text-red-600 border border-red-100 hover:bg-green-50 hover:text-green-600'
+                            }`}>
+                            {c.servicios[0].estado}
+                          </button>
+                        ) : (
+                          <span className="px-4 py-2 rounded-2xl text-[10px] font-black uppercase bg-slate-100 text-slate-400 border border-slate-200">
+                            Sin Servicio
+                          </span>
+                        )}
 
                         <button onClick={() => eliminarCliente(c.id)} className="bg-red-50 p-3 rounded-2xl hover:bg-red-500 transition-colors group border border-red-100">
                            <span className="text-[10px] font-black text-red-400 group-hover:text-white uppercase">Borrar</span>

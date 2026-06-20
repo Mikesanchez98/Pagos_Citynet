@@ -98,65 +98,79 @@ const MapaPanel = () => {
           />
 
           {/* DIBUJAR TORRES */}
-          {torres.map(torre => (
-            <React.Fragment key={`group-${torre.id}`}>
-              <Marker position={[torre.latitud, torre.longitud]} icon={torreIcon}>
-                <Popup>
-                  <div className="p-1">
-                    <h3 className="font-black text-slate-800 uppercase text-xs">🗼 {torre.nombre}</h3>
-                    <p className="text-[10px] text-blue-600 font-bold mt-1 uppercase">Torre Base</p>
-                  </div>
-                </Popup>
-              </Marker>
+          {torres.map(torre => {
+            if (!torre.latitud || !torre.longitud) return null;
+            return (
+              <React.Fragment key={`group-${torre.id}`}>
+                <Marker position={[torre.latitud, torre.longitud]} icon={torreIcon}>
+                  <Popup>
+                    <div className="p-1">
+                      <h3 className="font-black text-slate-800 uppercase text-xs">🗼 {torre.nombre}</h3>
+                      <p className="text-[10px] text-blue-600 font-bold mt-1 uppercase">Torre Base</p>
+                    </div>
+                  </Popup>
+                </Marker>
 
-              {/* DIBUJAR CLIENTES Y LÍNEAS DE CONEXIÓN */}
-              {clientes
-                .filter(c => c.torreId === torre.id && c.latitud && c.longitud)
-                .map(cliente => (
-                  <React.Fragment key={`cliente-flow-${cliente.id}`}>
-                    {/* Línea de la torre al cliente */}
-                    <Polyline 
-                      positions={[
-                        [torre.latitud, torre.longitud],
-                        [cliente.latitud, cliente.longitud]
-                      ]}
-                      pathOptions={{ 
-                        color: '#60a5fa', 
-                        weight: 2, 
-                        dashArray: '5, 10', 
-                        opacity: 0.5 
-                      }}
-                    />
-                    
-                    {/* Marcador del Cliente */}
-                    <Marker position={[cliente.latitud, cliente.longitud]} icon={clienteIcon}>
-                      <Popup>
-                        <div className="min-w-[120px]">
-                          <p className="font-black text-slate-800 text-xs mb-1">{cliente.nombre}</p>
-                          <div className="flex justify-between items-center bg-slate-50 p-2 rounded-lg">
-                            <span className="text-[9px] font-bold text-slate-400 uppercase">ID: {cliente.numCliente}</span>
-                            <span className="text-[9px] font-black text-green-500 uppercase">En Línea</span>
-                          </div>
-                          <p className="text-[9px] text-slate-400 mt-2 italic font-medium">Conectado a: {torre.nombre}</p>
-                        </div>
-                      </Popup>
-                    </Marker>
-                  </React.Fragment>
-                ))}
-            </React.Fragment>
-          ))}
+                {/* CLIENTES CONECTADOS A ESTA TORRE (coordenadas vienen del servicio) */}
+                {clientes
+                  .filter(c => {
+                    const s = c.servicios?.[0];
+                    return s?.torreId === torre.id && s?.latitud && s?.longitud;
+                  })
+                  .map(cliente => {
+                    const s = cliente.servicios[0];
+                    return (
+                      <React.Fragment key={`cliente-flow-${cliente.id}`}>
+                        <Polyline
+                          positions={[
+                            [torre.latitud, torre.longitud],
+                            [s.latitud, s.longitud]
+                          ]}
+                          pathOptions={{ color: '#60a5fa', weight: 2, dashArray: '5, 10', opacity: 0.5 }}
+                        />
+                        <Marker position={[s.latitud, s.longitud]} icon={clienteIcon}>
+                          <Popup>
+                            <div className="min-w-[120px]">
+                              <p className="font-black text-slate-800 text-xs mb-1">{cliente.nombre}</p>
+                              <div className="flex justify-between items-center bg-slate-50 p-2 rounded-lg">
+                                <span className="text-[9px] font-bold text-slate-400 uppercase">ID: {cliente.numCliente}</span>
+                                <span className={`text-[9px] font-black uppercase ${s.estado === 'ACTIVO' ? 'text-green-500' : 'text-red-500'}`}>
+                                  {s.estado}
+                                </span>
+                              </div>
+                              <p className="text-[9px] text-slate-400 mt-1 italic font-medium">
+                                📦 {s.paquete?.nombre || 'Sin plan'} — {s.direccionIp || 'Sin IP'}
+                              </p>
+                              <p className="text-[9px] text-slate-400 italic font-medium">Torre: {torre.nombre}</p>
+                            </div>
+                          </Popup>
+                        </Marker>
+                      </React.Fragment>
+                    );
+                  })}
+              </React.Fragment>
+            );
+          })}
 
-          {/* MOSTRAR CLIENTES QUE NO TIENEN TORRE ASIGNADA (PARA QUE NO SE PIERDAN) */}
-          {clientes.filter(c => !c.torreId && c.latitud && c.longitud).map(cliente => (
-            <Marker key={`orphan-${cliente.id}`} position={[cliente.latitud, cliente.longitud]} icon={clienteIcon}>
-              <Popup>
-                <div className="p-1">
-                  <h3 className="font-black text-slate-800 text-xs">{cliente.nombre}</h3>
-                  <span className="text-[9px] font-black text-orange-500 uppercase bg-orange-50 px-2 py-0.5 rounded-full">Sin Torre Asignada</span>
-                </div>
-              </Popup>
-            </Marker>
-          ))}
+          {/* CLIENTES SIN TORRE ASIGNADA */}
+          {clientes
+            .filter(c => {
+              const s = c.servicios?.[0];
+              return !s?.torreId && s?.latitud && s?.longitud;
+            })
+            .map(cliente => {
+              const s = cliente.servicios[0];
+              return (
+                <Marker key={`orphan-${cliente.id}`} position={[s.latitud, s.longitud]} icon={clienteIcon}>
+                  <Popup>
+                    <div className="p-1">
+                      <h3 className="font-black text-slate-800 text-xs">{cliente.nombre}</h3>
+                      <span className="text-[9px] font-black text-orange-500 uppercase bg-orange-50 px-2 py-0.5 rounded-full">Sin Torre Asignada</span>
+                    </div>
+                  </Popup>
+                </Marker>
+              );
+            })}
 
         </MapContainer>
       </div>

@@ -1,149 +1,174 @@
+// backend/services/sincronizacion-mikrotik.js
+// Sincronización periódica: lee sesiones activas de MikroTik y actualiza
+// el estado de cada Servicio (IP, MAC, antena) usando Servicio.mikrotikUser
+// como clave de vinculación.
+
 const { PrismaClient } = require('@prisma/client');
 const mikrotikService = require('./mikrotik');
 const prisma = new PrismaClient();
 
 class SincronizacionMikrotikService {
+
   async sincronizarServicios() {
-    console.log('[Sincronización] Iniciando...');
+    const ahora = new Date();
+    console.log(`\n[${ahora.toLocaleTimeString()}] 📡 Sincronización MikroTik iniciando...`);
 
     try {
-      const sesionesActivas = await mikrotikService.obtenerSesionesActivas();
-      
-      const servicios = await prisma.servicio.findMany({
-        include: {
-          cliente: true,
-          antena: true
-        }
-      });
+      const sesionesActivas = await mikrotikService.obtenerSesionesConDetalle();
+      console.log(`[Sync] ${sesionesActivas.length} sesiones activas`);
 
-      for (const servicio of servicios) {
-        const numCliente = servicio.cliente.numCliente;
-        const sesionActiva = sesionesActivas.find(s => s.usuario === numCliente);
+      let actualizadas = 0;
+      let cambiosAntena = 0;
+      let sinVincular = 0;
 
-        if (!sesionActiva) {
-          console.log(`⚠️  ${numCliente} no está conectado`);
-          continue;
-        }
-
-        await this.detectarCambios(servicio, sesionActiva);
+      for (const sesion of sesionesActivas) {
+        const resultado = await this.procesarSesion(sesion);
+        if (resultado.actualizado)   actualizadas++;
+        if (resultado.cambioAntena)  cambiosAntena++;
+        if (resultado.sinVincular)   sinVincular++;
       }
 
-      const ahora = new Date();
-      console.log(`✅ Sincronización completada a las ${ahora.toLocaleTimeString()}`);
+      // Marcar como SUSPENDIDO servicios vinculados que ya no tienen sesión activa
+      await this.marcarInactivos(sesionesActivas);
 
-      return { exito: true, timestamp: ahora };
+      console.log(`✅ Sincronización completada:`);
+      console.log(`   Actualizados  : ${actualizadas}`);
+      console.log(`   Cambios antena: ${cambiosAntena}`);
+      console.log(`   Sin vincular  : ${sinVincular}`);
 
+      return { exito: true, sesiones: sesionesActivas.length, actualizadas, cambiosAntena, sinVincular, timestamp: ahora };
     } catch (error) {
-      console.error('❌ Error sincronizando:', error.message);
+      console.error('❌ Error en sincronización:', error.message);
       throw error;
     }
   }
 
-  async detectarCambios(servicio, sesionActiva) {
+  async procesarSesion(sesion) {
     try {
-      const cambios = [];
+      const { usuario, ip, mac } = sesion;
 
-      if (servicio.direccionIp !== sesionActiva.ip) {
-        console.log(
-          `[${servicio.cliente.numCliente}] IP cambió de ${servicio.direccionIp} a ${sesionActiva.ip}`
-        );
-        cambios.push({ tipo: 'ip', anterior: servicio.direccionIp, actual: sesionActiva.ip });
+      // Buscar servicio por su usuario MikroTik (vínculo directo)
+      const servicio = await prisma.servicio.findFirst({
+        where: { mikrotikUser: usuario },
+        include: { antena: true, cliente: true }
+      });
+
+      if (!servicio) {
+        // Sesión activa sin servicio vinculado en el sistema
+        return { actualizado: false, cambioAntena: false, sinVincular: true };
       }
 
-      if (cambios.length > 0) {
-        await this.procesarCambios(servicio, sesionActiva, cambios);
+      let cambioAntena = false;
+      const datosActualizar = { ultimaSincronizacion: new Date() };
+
+      // Actualizar IP si cambió
+      if (ip && servicio.direccionIp !== ip) {
+        console.log(`[Sync] IP: ${usuario} → ${servicio.direccionIp || 'ninguna'} → ${ip}`);
+        datosActualizar.direccionIp = ip;
+
+        // Detectar antena: primero por interfaceName, luego por subred
+        const antenaDetectada = sesion.interfaz
+          ? await this.identificarAntenaPorInterface(sesion.interfaz) ?? await this.identificarAntena(ip)
+          : await this.identificarAntena(ip);
+
+        if (antenaDetectada && servicio.antenaId !== antenaDetectada.id) {
+          console.log(`🔄 [Sync] Cambio de antena: ${usuario} | ${servicio.antena?.nombre ?? 'ninguna'} → ${antenaDetectada.nombre}`);
+
+          await prisma.cambioAntena.create({
+            data: {
+              servicioId:      servicio.id,
+              antenaAnteriorId: servicio.antenaId,
+              antenaActualId:  antenaDetectada.id,
+              ipAnterior:      servicio.direccionIp,
+              ipActual:        ip,
+              macAddress:      mac || null,
+              detectedBy:      'sincronizacion',
+              razon:           'Cambio de antena detectado automáticamente'
+            }
+          });
+
+          datosActualizar.antenaId = antenaDetectada.id;
+          datosActualizar.torreId  = antenaDetectada.torreId;
+          cambioAntena = true;
+        }
+      }
+
+      // Actualizar MAC si cambió o no estaba
+      if (mac && servicio.macAddress !== mac) {
+        datosActualizar.macAddress = mac;
       }
 
       await prisma.servicio.update({
         where: { id: servicio.id },
-        data: {
-          ultimaSincronizacion: new Date()
-        }
+        data:  datosActualizar
       });
 
+      return { actualizado: true, cambioAntena, sinVincular: false };
     } catch (error) {
-      console.error(`Error detectando cambios:`, error.message);
+      console.error('[Sync] Error procesando sesión:', error.message);
+      return { actualizado: false, cambioAntena: false, sinVincular: false };
     }
   }
 
-  async procesarCambios(servicio, sesionActiva, cambios) {
+  // Servicios vinculados a MikroTik que no están en sesiones activas → SUSPENDIDO
+  async marcarInactivos(sesionesActivas) {
+    const usuariosActivos = sesionesActivas.map(s => s.usuario);
+
     try {
-      const antenaActual = await this.identificarAntena(sesionActiva.ip);
+      await prisma.servicio.updateMany({
+        where: {
+          mikrotikUser: { not: null },
+          estado: 'ACTIVO',
+          NOT: { mikrotikUser: { in: usuariosActivos } }
+        },
+        data: { ultimaSincronizacion: new Date() }
+        // Nota: no cambiamos 'estado' automáticamente para evitar falsas suspensiones
+        // por pérdidas momentáneas de sesión. El corte manual desde el panel es deliberado.
+      });
+    } catch (e) {
+      console.error('[Sync] Error marcando inactivos:', e.message);
+    }
+  }
 
-      if (!antenaActual) {
-        console.warn(`⚠️  No se pudo identificar antena para IP ${sesionActiva.ip}`);
-        return;
-      }
-
-      if (servicio.antenaId !== antenaActual.id) {
-        console.log(
-          `🔄 [${servicio.cliente.numCliente}] Cambió de antena: ${servicio.antena?.nombre} → ${antenaActual.nombre}`
-        );
-
-        await prisma.cambioAntena.create({
-          data: {
-            servicioId: servicio.id,
-            antenaAnteriorId: servicio.antenaId,
-            antenaActualId: antenaActual.id,
-            ipAnterior: servicio.direccionIp,
-            ipActual: sesionActiva.ip,
-            detectedBy: 'sincronizacion'
-          }
-        });
-
-        await prisma.servicio.update({
-          where: { id: servicio.id },
-          data: {
-            antenaId: antenaActual.id,
-            direccionIp: sesionActiva.ip,
-            ultimaSincronizacion: new Date()
-          }
-        });
-
-        console.log(`✅ Servicio ${servicio.cliente.numCliente} actualizado`);
-      }
-
-    } catch (error) {
-      console.error('Error procesando cambios:', error.message);
+  async identificarAntenaPorInterface(interfaceName) {
+    try {
+      return await prisma.antena.findFirst({
+        where: { interfaceName, activa: true }
+      });
+    } catch {
+      return null;
     }
   }
 
   async identificarAntena(ip) {
     try {
-      const antenas = await prisma.antena.findMany({
-        include: { torre: true }
-      });
-
+      const antenas = await prisma.antena.findMany({ where: { activa: true } });
       for (const antena of antenas) {
-        if (!antena.subred) continue;
-
-        if (this.estaEnSubred(ip, antena.subred)) {
+        if (antena.subred && this.estaEnSubred(ip, antena.subred)) {
           return antena;
         }
       }
-
       return null;
-    } catch (error) {
-      console.error('Error identificando antena:', error.message);
+    } catch {
       return null;
     }
   }
 
+  // Comparación bit a bit correcta para cualquier prefijo (/8 al /32)
   estaEnSubred(ip, subred) {
     try {
-      const [red, mascara] = subred.split('/');
-      const partes = red.split('.').map(Number);
-      const partsIP = ip.split('.').map(Number);
+      const [red, prefijo] = subred.split('/');
+      const bits = parseInt(prefijo);
 
-      const mascaraBits = parseInt(mascara);
-      const bytesRed = Math.ceil(mascaraBits / 8);
+      const ipToInt = str =>
+        str.split('.').reduce((acc, n) => ((acc << 8) | parseInt(n)) >>> 0, 0);
 
-      for (let i = 0; i < bytesRed; i++) {
-        if (partes[i] !== partsIP[i]) return false;
-      }
+      const mascara = bits === 0
+        ? 0
+        : (0xFFFFFFFF << (32 - bits)) >>> 0;
 
-      return true;
-    } catch (error) {
+      return (ipToInt(ip) & mascara) === (ipToInt(red) & mascara);
+    } catch {
       return false;
     }
   }

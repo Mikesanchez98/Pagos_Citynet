@@ -1,491 +1,616 @@
-import React, { useState, useEffect } from 'react';
+// src/pages/TorresPanel.jsx
+import React, { useState, useEffect, useCallback } from 'react';
 import api from '../api/axios';
 import { useNavigate, Link } from 'react-router-dom';
 import logoCitynet from '../assets/logo-citynet-antiguo.png';
 
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+const authHeader = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` });
+
+const badge = (estado) =>
+  estado === 'ACTIVO'
+    ? 'bg-green-100 text-green-700'
+    : 'bg-red-100 text-red-600';
+
+// ── Componente principal ──────────────────────────────────────────────────────
+
 const TorresPanel = () => {
   const navigate = useNavigate();
-
-  // Estados para el formulario
-  const [nombre, setNombre] = useState('');
-  const [latitud, setLatitud] = useState('');
-  const [longitud, setLongitud] = useState('');
-  
-  // Estados para control de edición
-  const [editMode, setEditMode] = useState(false);
-  const [torreId, setTorreId] = useState(null);
-
-  const [torres, setTorres] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [status, setStatus] = useState({ msg: '', type: '' });
-  
-  // 🆕 Estado para cambiar entre vistas
-  const [vista, setVista] = useState('gestion'); // 'gestion' o 'monitoreo'
-  
-  // 🆕 Estado para torres expandidas en monitoreo
-  const [torreExpandida, setTorreExpandida] = useState(null);
-  const [antenaExpandida, setAntenaExpandida] = useState(null);
+  const [vista, setVista] = useState('gestion'); // 'gestion' | 'monitoreo' | 'mikrotik'
 
   useEffect(() => {
-    const verificarAcceso = () => {
-      const user = JSON.parse(localStorage.getItem('user'));
-      const token = localStorage.getItem('token');
-      if (!token || user?.rol !== 'ADMIN') {
-        navigate('/login');
-        return;
-      }
-      obtenerTorres();
-    };
-    verificarAcceso();
+    const user  = JSON.parse(localStorage.getItem('user'));
+    const token = localStorage.getItem('token');
+    if (!token || user?.rol !== 'ADMIN') navigate('/login');
   }, [navigate]);
-
-  const obtenerTorres = async () => {
-    try {
-      const token = localStorage.getItem('token');
-      const response = await api.get('/admin/torres', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setTorres(Array.isArray(response.data) ? response.data : []);
-    } catch (error) {
-      console.error("Error al cargar las torres:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Función para activar la edición
-  const prepararEdicion = (torre) => {
-    setEditMode(true);
-    setTorreId(torre.id);
-    setNombre(torre.nombre);
-    setLatitud(torre.latitud || '');
-    setLongitud(torre.longitud || '');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const cancelarEdicion = () => {
-    setEditMode(false);
-    setTorreId(null);
-    setNombre('');
-    setLatitud('');
-    setLongitud('');
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setStatus({ msg: editMode ? 'Actualizando...' : 'Guardando...', type: 'info' });
-
-    try {
-      const token = localStorage.getItem('token');
-      const data = { 
-        nombre, 
-        latitud: latitud ? parseFloat(latitud) : null, 
-        longitud: longitud ? parseFloat(longitud) : null 
-      };
-
-      if (editMode) {
-        await api.put(`/admin/torres/${torreId}`, data, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        setStatus({ msg: 'Torre actualizada correctamente', type: 'success' });
-      } else {
-        await api.post('/admin/torres', data, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        setStatus({ msg: '¡Torre registrada con éxito!', type: 'success' });
-      }
-
-      cancelarEdicion();
-      obtenerTorres();
-      setTimeout(() => setStatus({ msg: '', type: '' }), 3000);
-    } catch (error) {
-      console.error("Error en la operación:", error);
-      setStatus({ msg: 'Error al procesar la solicitud', type: 'error' });
-    }
-  };
-
-  // 🆕 Obtener torres con antenas (para monitoreo)
-  const obtenerTorresConAntenas = async () => {
-    try {
-      const token = localStorage.getItem('token');
-      const response = await api.get('/torres', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Error:', error);
-      return [];
-    }
-  };
-
-  // 🆕 Toggle de torre expandida
-  const toggleTorre = (torreId) => {
-    setTorreExpandida(torreExpandida === torreId ? null : torreId);
-    setAntenaExpandida(null);
-  };
-
-  // 🆕 Toggle de antena expandida
-  const toggleAntena = (antenaId) => {
-    setAntenaExpandida(antenaExpandida === antenaId ? null : antenaId);
-  };
-
-  if (loading) return <div className="p-10 text-center font-bold text-slate-500 uppercase tracking-widest">Cargando Infraestructura...</div>;
 
   return (
     <div className="min-h-screen bg-slate-50 pb-20 font-sans">
-      
+
       {/* NAVBAR */}
-      <nav className="bg-slate-900 text-white p-4 shadow-xl flex justify-between items-center px-8">
+      <nav className="bg-slate-900 text-white p-4 shadow-xl flex justify-between items-center px-8 sticky top-0 z-40">
         <div className="flex items-center gap-4">
-          <img src={logoCitynet} alt="Logo" className="h-10 brightness-0 invert" />
-          <span className="text-[10px] font-black tracking-[0.3em] text-blue-400 border-l border-slate-700 pl-4 uppercase tracking-widest">Gestión de Torres</span>
+          <img src={logoCitynet} alt="Logo" className="h-8 brightness-0 invert" />
+          <span className="text-[10px] font-black tracking-[0.3em] text-blue-400 border-l border-slate-700 pl-4 uppercase">
+            Infraestructura de Red
+          </span>
         </div>
-        <div className="flex gap-4">
-          <Link to="/admin" className="text-[10px] font-black px-4 py-2 rounded-xl border border-blue-500/30 text-blue-400 hover:bg-blue-500 hover:text-white transition-all uppercase">
-            Volver a Clientes
-          </Link>
-          <button onClick={() => {localStorage.clear(); navigate('/login');}} className="text-[10px] font-black px-4 py-2 rounded-xl border border-red-500/30 text-red-500 hover:bg-red-500 hover:text-white transition-all">SALIR</button>
-        </div>
+        <Link to="/admin" className="text-[10px] font-black px-4 py-2 rounded-xl border border-blue-500/30 text-blue-400 hover:bg-blue-500 hover:text-white transition-all uppercase">
+          ← Volver
+        </Link>
       </nav>
 
-      {/* 🆕 TABS PARA CAMBIAR VISTA */}
+      {/* TABS */}
       <div className="max-w-7xl mx-auto mt-8 px-4">
-        <div className="flex gap-4 mb-8">
-          <button
-            onClick={() => setVista('gestion')}
-            className={`px-6 py-3 rounded-2xl font-black text-sm uppercase transition-all ${
-              vista === 'gestion'
-                ? 'bg-slate-900 text-white shadow-lg'
-                : 'bg-white text-slate-600 border border-slate-100 hover:bg-slate-50'
-            }`}
-          >
-            📝 Gestión de Torres
-          </button>
-          <button
-            onClick={() => setVista('monitoreo')}
-            className={`px-6 py-3 rounded-2xl font-black text-sm uppercase transition-all ${
-              vista === 'monitoreo'
-                ? 'bg-slate-900 text-white shadow-lg'
-                : 'bg-white text-slate-600 border border-slate-100 hover:bg-slate-50'
-            }`}
-          >
-            📡 Torres y Antenas
-          </button>
+        <div className="flex gap-3 mb-8">
+          {[
+            { key: 'gestion',   label: '🗼 Torres y Antenas' },
+            { key: 'monitoreo', label: '📡 Conexiones en Vivo' },
+            { key: 'mikrotik',  label: '🔧 Importar de MikroTik' },
+          ].map(t => (
+            <button
+              key={t.key}
+              onClick={() => setVista(t.key)}
+              className={`px-5 py-3 rounded-2xl font-black text-xs uppercase transition-all ${
+                vista === t.key
+                  ? 'bg-slate-900 text-white shadow-lg'
+                  : 'bg-white text-slate-500 border border-slate-100 hover:bg-slate-50'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
+
+        {vista === 'gestion'   && <VistaGestion />}
+        {vista === 'monitoreo' && <VistaMonitoreo />}
+        {vista === 'mikrotik'  && <VistaMikrotik />}
       </div>
-
-      {/* VISTA: GESTIÓN DE TORRES */}
-      {vista === 'gestion' && (
-        <div className="max-w-7xl mx-auto mt-8 px-4 grid grid-cols-1 lg:grid-cols-12 gap-8">
-          <div className="lg:col-span-4">
-            <div className={`bg-white p-8 rounded-[2.5rem] shadow-sm border ${editMode ? 'border-blue-200 ring-2 ring-blue-50' : 'border-slate-100'} sticky top-8 transition-all`}>
-              <h2 className="text-xl font-black text-slate-800 mb-2">
-                {editMode ? 'Editar Torre' : 'Nueva Torre'}
-              </h2>
-              <p className="text-[10px] text-slate-400 font-bold uppercase mb-6 tracking-widest">
-                {editMode ? `Editando ID: ${torreId}` : 'Configura un nuevo punto de red'}
-              </p>
-              
-              {status.msg && (
-                <div className={`mb-4 p-3 rounded-2xl text-xs font-bold text-center ${status.type === 'error' ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
-                  {status.msg}
-                </div>
-              )}
-
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div>
-                  <label className="text-[10px] font-black text-slate-400 ml-4 mb-1 block uppercase">Nombre</label>
-                  <input 
-                    required type="text" 
-                    className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold" 
-                    placeholder="Ej: Cerro Norte" 
-                    value={nombre} 
-                    onChange={e => setNombre(e.target.value)} 
-                  />
-                </div>
-                
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-[10px] font-black text-slate-400 ml-4 mb-1 block uppercase">Latitud</label>
-                    <input 
-                      type="number" step="any"
-                      className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold" 
-                      placeholder="19.2..." value={latitud} 
-                      onChange={e => setLatitud(e.target.value)} 
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black text-slate-400 ml-4 mb-1 block uppercase">Longitud</label>
-                    <input 
-                      type="number" step="any"
-                      className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold" 
-                      placeholder="-103..." value={longitud} 
-                      onChange={e => setLongitud(e.target.value)} 
-                    />
-                  </div>
-                </div>
-                
-                <button type="submit" className={`w-full ${editMode ? 'bg-blue-600' : 'bg-slate-900'} text-white py-5 rounded-3xl font-black text-sm tracking-widest hover:opacity-90 transition-all shadow-lg uppercase mt-4`}>
-                  {editMode ? 'Actualizar Cambios' : 'Registrar Torre'}
-                </button>
-
-                {editMode && (
-                  <button type="button" onClick={cancelarEdicion} className="w-full text-slate-400 text-[10px] font-black uppercase hover:text-slate-600">
-                    Cancelar Edición
-                  </button>
-                )}
-              </form>
-            </div>
-          </div>
-
-          <div className="lg:col-span-8">
-            <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden">
-              <table className="w-full text-left">
-                <thead className="bg-slate-50/50 border-b border-slate-100">
-                  <tr className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">
-                    <th className="p-6">Torre</th>
-                    <th className="p-6">Coordenadas</th>
-                    <th className="p-6 text-center">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-50">
-                  {torres.map(torre => (
-                    <tr key={torre.id} className="hover:bg-slate-50/30 transition-colors">
-                      <td className="p-6">
-                        <p className="font-black text-slate-800 text-base">{torre.nombre}</p>
-                        <span className="text-[10px] font-bold text-blue-500 uppercase">ID: {torre.id}</span>
-                      </td>
-                      <td className="p-6">
-                        {torre.latitud ? (
-                           <span className="text-xs font-mono font-bold text-slate-500">
-                             {torre.latitud}, {torre.longitud}
-                           </span>
-                        ) : (
-                          <span className="text-[10px] font-black text-orange-400 bg-orange-50 px-3 py-1 rounded-full uppercase">Sin GPS</span>
-                        )}
-                      </td>
-                      <td className="p-6 text-center">
-                        <button 
-                          onClick={() => prepararEdicion(torre)}
-                          className="p-3 bg-slate-100 text-slate-600 rounded-xl hover:bg-blue-600 hover:text-white transition-all"
-                          title="Editar Coordenadas"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                          </svg>
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* VISTA: TORRES Y ANTENAS 🆕 */}
-      {vista === 'monitoreo' && (
-        <TorresMonitoreoVista 
-          torreExpandida={torreExpandida}
-          antenaExpandida={antenaExpandida}
-          toggleTorre={toggleTorre}
-          toggleAntena={toggleAntena}
-          obtenerTorresConAntenas={obtenerTorresConAntenas}
-        />
-      )}
     </div>
   );
 };
 
-// 🆕 COMPONENTE INTERNO PARA MONITOREO
-const TorresMonitoreoVista = ({ torreExpandida, antenaExpandida, toggleTorre, toggleAntena, obtenerTorresConAntenas }) => {
-  const [torres, setTorres] = useState([]);
-  const [loading, setLoading] = useState(true);
+// ── Vista: Gestión de Torres ──────────────────────────────────────────────────
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const data = await obtenerTorresConAntenas();
-        setTorres(data);
-      } catch (error) {
-        console.error('Error:', error);
-      } finally {
-        setLoading(false);
+const VistaGestion = () => {
+  const [torres,   setTorres]   = useState([]);
+  const [loading,  setLoading]  = useState(true);
+  const [editMode, setEditMode] = useState(false);
+  const [torreId,  setTorreId]  = useState(null);
+  const [nombre,   setNombre]   = useState('');
+  const [latitud,  setLatitud]  = useState('');
+  const [longitud, setLongitud] = useState('');
+  const [status,   setStatus]   = useState({ msg: '', type: '' });
+  const [expandida, setExpandida] = useState(null);
+
+  const cargar = useCallback(async () => {
+    try {
+      const r = await api.get('/torres', { headers: authHeader() });
+      setTorres(Array.isArray(r.data) ? r.data : []);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { cargar(); }, [cargar]);
+
+  const iniciarEdicion = (t) => {
+    setEditMode(true); setTorreId(t.id);
+    setNombre(t.nombre); setLatitud(t.latitud || ''); setLongitud(t.longitud || '');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const cancelar = () => {
+    setEditMode(false); setTorreId(null);
+    setNombre(''); setLatitud(''); setLongitud('');
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const data = { nombre, latitud: latitud ? parseFloat(latitud) : null, longitud: longitud ? parseFloat(longitud) : null };
+      if (editMode) {
+        await api.put(`/admin/torres/${torreId}`, data, { headers: authHeader() });
+      } else {
+        await api.post('/admin/torres', data, { headers: authHeader() });
       }
-    };
+      setStatus({ msg: editMode ? 'Torre actualizada' : 'Torre registrada', type: 'success' });
+      cancelar(); cargar();
+      setTimeout(() => setStatus({ msg: '', type: '' }), 3000);
+    } catch {
+      setStatus({ msg: 'Error al procesar', type: 'error' });
+    }
+  };
 
-    fetchData();
-  }, [obtenerTorresConAntenas]);
-
-  if (loading) return <div className="max-w-7xl mx-auto px-4 text-center text-slate-500">Cargando torres y antenas...</div>;
+  if (loading) return <div className="text-center text-slate-400 py-20 font-black uppercase text-xs tracking-widest">Cargando...</div>;
 
   return (
-    <div className="max-w-7xl mx-auto px-4">
-      {torres.map(torre => (
-        <div
-          key={torre.id}
-          style={{
-            background: '#f5f5f5',
-            border: '1px solid #ddd',
-            borderRadius: '8px',
-            marginBottom: '15px',
-            overflow: 'hidden'
-          }}
-        >
-          {/* HEADER TORRE */}
-          <div
-            onClick={() => toggleTorre(torre.id)}
-            style={{
-              background: '#667eea',
-              color: 'white',
-              padding: '15px',
-              cursor: 'pointer',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center'
-            }}
-          >
-            <div>
-              <h2 style={{ margin: 0 }}>📍 {torre.nombre}</h2>
-              <p style={{ margin: '5px 0 0 0', fontSize: '14px', opacity: 0.9 }}>
-                IP Principal: {torre.ipPrincipal || 'N/A'}
-              </p>
-            </div>
-            <div style={{ fontSize: '24px' }}>
-              {torreExpandida === torre.id ? '▼' : '▶'}
-            </div>
-          </div>
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+      {/* Formulario */}
+      <div className="lg:col-span-4">
+        <div className={`bg-white p-8 rounded-[2.5rem] shadow-sm border sticky top-24 ${editMode ? 'border-blue-200 ring-2 ring-blue-50' : 'border-slate-100'}`}>
+          <h2 className="text-xl font-black text-slate-800 mb-6">{editMode ? 'Editar Torre' : 'Nueva Torre'}</h2>
 
-          {/* CONTENIDO TORRE */}
-          {torreExpandida === torre.id && (
-            <div style={{ padding: '15px' }}>
-              {torre.antenas.length === 0 ? (
-                <p style={{ color: '#666' }}>Sin antenas</p>
-              ) : (
-                torre.antenas.map(antena => (
-                  <div
-                    key={antena.id}
-                    style={{
-                      background: 'white',
-                      border: '1px solid #ddd',
-                      borderRadius: '6px',
-                      marginBottom: '10px',
-                      overflow: 'hidden'
-                    }}
-                  >
-                    {/* HEADER ANTENA */}
-                    <div
-                      onClick={() => toggleAntena(antena.id)}
-                      style={{
-                        background: antena.activa ? '#e8f5e9' : '#ffebee',
-                        borderLeft: `4px solid ${antena.activa ? '#28a745' : '#dc3545'}`,
-                        padding: '12px',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center'
-                      }}
-                    >
-                      <div>
-                        <h3 style={{ margin: 0 }}>
-                          📡 {antena.nombre}
-                          {!antena.activa && (
-                            <span style={{
-                              marginLeft: '10px',
-                              fontSize: '12px',
-                              color: '#dc3545'
-                            }}>
-                              (INACTIVA)
-                            </span>
+          {status.msg && (
+            <div className={`mb-4 p-3 rounded-2xl text-xs font-bold text-center ${status.type === 'error' ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
+              {status.msg}
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <input required type="text" placeholder="Nombre de la torre" value={nombre}
+              className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold"
+              onChange={e => setNombre(e.target.value)} />
+
+            <div className="grid grid-cols-2 gap-3">
+              <input type="number" step="any" placeholder="Latitud" value={latitud}
+                className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold"
+                onChange={e => setLatitud(e.target.value)} />
+              <input type="number" step="any" placeholder="Longitud" value={longitud}
+                className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold"
+                onChange={e => setLongitud(e.target.value)} />
+            </div>
+
+            <button type="submit"
+              className={`w-full py-4 rounded-2xl font-black text-sm uppercase text-white ${editMode ? 'bg-blue-600' : 'bg-slate-900'}`}>
+              {editMode ? 'Guardar Cambios' : 'Registrar Torre'}
+            </button>
+            {editMode && (
+              <button type="button" onClick={cancelar}
+                className="w-full text-slate-400 text-[10px] font-black uppercase hover:text-slate-600">
+                Cancelar
+              </button>
+            )}
+          </form>
+        </div>
+      </div>
+
+      {/* Lista con antenas expandibles */}
+      <div className="lg:col-span-8 space-y-4">
+        {torres.length === 0 && (
+          <div className="bg-white rounded-[2.5rem] p-16 text-center text-slate-400 font-black text-xs uppercase tracking-widest border border-slate-100">
+            Sin torres registradas. Crea una o usa la pestaña "Importar de MikroTik".
+          </div>
+        )}
+        {torres.map(torre => (
+          <div key={torre.id} className="bg-white rounded-[2rem] shadow-sm border border-slate-100 overflow-hidden">
+            {/* Header torre */}
+            <div className="p-6 flex justify-between items-center">
+              <div>
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">🗼</span>
+                  <div>
+                    <p className="font-black text-slate-800 text-lg">{torre.nombre}</p>
+                    <div className="flex gap-3 mt-0.5">
+                      {torre.ipPrincipal && (
+                        <span className="text-[10px] font-mono font-bold text-blue-500 bg-blue-50 px-2 py-0.5 rounded-md">{torre.ipPrincipal}</span>
+                      )}
+                      {torre.latitud ? (
+                        <span className="text-[10px] font-mono text-slate-400">{torre.latitud}, {torre.longitud}</span>
+                      ) : (
+                        <span className="text-[10px] font-bold text-orange-400 bg-orange-50 px-2 py-0.5 rounded-md">Sin GPS</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-[10px] font-black text-slate-400 bg-slate-100 px-3 py-1.5 rounded-xl">
+                  {torre.antenas?.length || 0} antenas · {torre.antenas?.reduce((s, a) => s + a.clientesConectados, 0) || 0} clientes
+                </span>
+                <button onClick={() => iniciarEdicion(torre)}
+                  className="p-2.5 bg-slate-100 rounded-xl hover:bg-blue-50 hover:text-blue-600 transition-all text-slate-500 text-xs font-black">
+                  Editar
+                </button>
+                <button onClick={() => setExpandida(expandida === torre.id ? null : torre.id)}
+                  className="p-2.5 bg-slate-100 rounded-xl hover:bg-slate-200 transition-all text-slate-600 font-black text-xs">
+                  {expandida === torre.id ? '▲' : '▼'}
+                </button>
+              </div>
+            </div>
+
+            {/* Antenas */}
+            {expandida === torre.id && (
+              <div className="border-t border-slate-100 divide-y divide-slate-50">
+                {(!torre.antenas || torre.antenas.length === 0) ? (
+                  <div className="p-6 text-center text-slate-400 text-xs font-black uppercase">
+                    Sin antenas — usa "Importar de MikroTik" para auto-detectarlas
+                  </div>
+                ) : (
+                  torre.antenas.map(antena => (
+                    <div key={antena.id} className="px-6 py-4">
+                      <div className="flex justify-between items-center">
+                        <div className="flex items-center gap-3">
+                          <span className={`w-2 h-2 rounded-full ${antena.activa ? 'bg-green-400' : 'bg-red-400'}`} />
+                          <span className="font-black text-slate-700 text-sm">📡 {antena.nombre}</span>
+                          {antena.interfaceName && (
+                            <span className="text-[10px] font-mono text-blue-500 bg-blue-50 px-2 py-0.5 rounded">{antena.interfaceName}</span>
                           )}
-                        </h3>
-                        <p style={{ margin: '5px 0 0 0', fontSize: '13px', color: '#666' }}>
-                          IP: {antena.ipGateway} | Subred: {antena.subred}
-                        </p>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                        <span style={{
-                          background: '#667eea',
-                          color: 'white',
-                          padding: '4px 12px',
-                          borderRadius: '20px',
-                          fontSize: '12px'
-                        }}>
-                          {antena.clientesConectados} clientes
-                        </span>
-                        <div style={{ fontSize: '18px' }}>
-                          {antenaExpandida === antena.id ? '▼' : '▶'}
+                        </div>
+                        <div className="flex gap-3 text-[10px] font-mono text-slate-400">
+                          {antena.ipGateway && <span>GW: {antena.ipGateway}</span>}
+                          {antena.subred    && <span>Red: {antena.subred}</span>}
+                          <span className="font-black text-slate-600">{antena.clientesConectados} clientes</span>
                         </div>
                       </div>
-                    </div>
-
-                    {/* CLIENTES DE LA ANTENA */}
-                    {antenaExpandida === antena.id && (
-                      <div style={{ padding: '12px', background: '#fafafa' }}>
-                        {antena.clientes.length === 0 ? (
-                          <p style={{ color: '#999', margin: 0 }}>
-                            Sin clientes conectados
-                          </p>
-                        ) : (
-                          <table style={{
-                            width: '100%',
-                            borderCollapse: 'collapse',
-                            fontSize: '13px'
-                          }}>
+                      {antena.clientes?.length > 0 && (
+                        <div className="mt-3 overflow-x-auto">
+                          <table className="w-full text-xs">
                             <thead>
-                              <tr style={{ borderBottom: '1px solid #ddd' }}>
-                                <th style={{ textAlign: 'left', padding: '8px' }}>Cliente</th>
-                                <th style={{ textAlign: 'left', padding: '8px' }}>Número</th>
-                                <th style={{ textAlign: 'left', padding: '8px' }}>MAC</th>
-                                <th style={{ textAlign: 'left', padding: '8px' }}>IP</th>
-                                <th style={{ textAlign: 'left', padding: '8px' }}>Plan</th>
-                                <th style={{ textAlign: 'left', padding: '8px' }}>Estado</th>
+                              <tr className="text-[10px] text-slate-400 uppercase tracking-wider border-b border-slate-100">
+                                <th className="text-left py-2 pr-4">Cliente</th>
+                                <th className="text-left py-2 pr-4">Num.</th>
+                                <th className="text-left py-2 pr-4">MikroTik User</th>
+                                <th className="text-left py-2 pr-4">IP</th>
+                                <th className="text-left py-2 pr-4">MAC</th>
+                                <th className="text-left py-2 pr-4">Plan</th>
+                                <th className="text-left py-2">Estado</th>
                               </tr>
                             </thead>
-                            <tbody>
-                              {antena.clientes.map((cliente, idx) => (
-                                <tr
-                                  key={idx}
-                                  style={{
-                                    borderBottom: '1px solid #e0e0e0',
-                                    background: idx % 2 === 0 ? '#fff' : '#f9f9f9'
-                                  }}
-                                >
-                                  <td style={{ padding: '8px' }}>{cliente.nombre}</td>
-                                  <td style={{ padding: '8px' }}>{cliente.numCliente}</td>
-                                  <td style={{ padding: '8px', fontFamily: 'monospace', fontSize: '11px' }}>
-                                    {cliente.macAddress || 'N/A'}
-                                  </td>
-                                  <td style={{ padding: '8px', fontFamily: 'monospace', fontSize: '12px' }}>
-                                    {cliente.ipAsignada}
-                                  </td>
-                                  <td style={{ padding: '8px' }}>{cliente.plan}</td>
-                                  <td style={{ padding: '8px' }}>
-                                    <span style={{
-                                      background: cliente.estado === 'ACTIVO' ? '#c8e6c9' : '#ffccbc',
-                                      color: cliente.estado === 'ACTIVO' ? '#2e7d32' : '#d84315',
-                                      padding: '2px 8px',
-                                      borderRadius: '12px',
-                                      fontSize: '11px'
-                                    }}>
-                                      {cliente.estado}
-                                    </span>
+                            <tbody className="divide-y divide-slate-50">
+                              {antena.clientes.map(c => (
+                                <tr key={c.servicioId} className="hover:bg-slate-50">
+                                  <td className="py-2 pr-4 font-bold text-slate-700">{c.nombre}</td>
+                                  <td className="py-2 pr-4 text-slate-500">{c.numCliente}</td>
+                                  <td className="py-2 pr-4 font-mono text-blue-500">{c.mikrotikUser || <span className="text-slate-300">—</span>}</td>
+                                  <td className="py-2 pr-4 font-mono text-slate-500">{c.ipAsignada}</td>
+                                  <td className="py-2 pr-4 font-mono text-slate-400 text-[10px]">{c.macAddress || '—'}</td>
+                                  <td className="py-2 pr-4 text-slate-500">{c.plan}</td>
+                                  <td className="py-2">
+                                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${badge(c.estado)}`}>{c.estado}</span>
                                   </td>
                                 </tr>
                               ))}
                             </tbody>
                           </table>
-                        )}
-                      </div>
-                    )}
+                        </div>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// ── Vista: Conexiones en Vivo ─────────────────────────────────────────────────
+
+const VistaMonitoreo = () => {
+  const [sesiones,  setSesiones]  = useState([]);
+  const [loading,   setLoading]   = useState(true);
+  const [ultimaSync, setUltimaSync] = useState(null);
+
+  const cargar = async () => {
+    setLoading(true);
+    try {
+      const r = await api.get('/admin/mikrotik/sesiones-activas', { headers: authHeader() });
+      setSesiones(r.data);
+      setUltimaSync(new Date());
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { cargar(); }, []);
+
+  const vinculadas   = sesiones.filter(s => s.vinculado);
+  const noVinculadas = sesiones.filter(s => !s.vinculado);
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-slate-100 flex justify-between items-center">
+        <div>
+          <h2 className="font-black text-slate-800 text-xl">Sesiones PPPoE Activas</h2>
+          <p className="text-xs text-slate-400 font-bold mt-1">
+            {sesiones.length} sesiones · {vinculadas.length} vinculadas · {noVinculadas.length} sin vincular
+            {ultimaSync && <span className="ml-3 text-slate-300">Actualizado: {ultimaSync.toLocaleTimeString()}</span>}
+          </p>
+        </div>
+        <button onClick={cargar} disabled={loading}
+          className="px-5 py-3 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase hover:bg-blue-700 transition-all disabled:opacity-50">
+          {loading ? '⏳ Cargando...' : '🔄 Actualizar'}
+        </button>
+      </div>
+
+      {loading && <div className="text-center py-20 text-slate-400 font-black text-xs uppercase">Consultando MikroTik...</div>}
+
+      {!loading && sesiones.length === 0 && (
+        <div className="bg-white rounded-[2rem] p-20 text-center text-slate-400 font-black text-xs uppercase border border-slate-100">
+          Sin sesiones activas detectadas
+        </div>
+      )}
+
+      {/* Sesiones vinculadas */}
+      {!loading && vinculadas.length > 0 && (
+        <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 overflow-hidden">
+          <div className="px-6 py-4 border-b border-slate-100 bg-green-50">
+            <p className="font-black text-green-700 text-xs uppercase tracking-widest">✅ Sesiones Vinculadas ({vinculadas.length})</p>
+          </div>
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-[10px] text-slate-400 uppercase tracking-wider border-b border-slate-100 bg-slate-50">
+                <th className="text-left p-4">PPPoE User</th>
+                <th className="text-left p-4">Cliente</th>
+                <th className="text-left p-4">IP Asignada</th>
+                <th className="text-left p-4">MAC</th>
+                <th className="text-left p-4">Interface</th>
+                <th className="text-left p-4">Antena</th>
+                <th className="text-left p-4">Uptime</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {vinculadas.map((s, i) => (
+                <tr key={i} className="hover:bg-slate-50">
+                  <td className="p-4 font-mono font-bold text-blue-600">{s.usuario}</td>
+                  <td className="p-4 font-bold text-slate-700">{s.cliente} <span className="text-slate-400 font-normal">({s.numCliente})</span></td>
+                  <td className="p-4 font-mono text-slate-600">{s.ip || '—'}</td>
+                  <td className="p-4 font-mono text-slate-400 text-[10px]">{s.mac || '—'}</td>
+                  <td className="p-4 font-mono text-slate-500">{s.interfaz || '—'}</td>
+                  <td className="p-4 text-slate-500">{s.antena || <span className="text-orange-400">Sin antena</span>}</td>
+                  <td className="p-4 text-slate-400">{s.uptime || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Sesiones sin vincular */}
+      {!loading && noVinculadas.length > 0 && (
+        <div className="bg-white rounded-[2rem] shadow-sm border border-orange-100 overflow-hidden">
+          <div className="px-6 py-4 border-b border-orange-100 bg-orange-50">
+            <p className="font-black text-orange-600 text-xs uppercase tracking-widest">
+              ⚠️ Sesiones sin vincular ({noVinculadas.length}) — usa "Importar de MikroTik" para vincularlas
+            </p>
+          </div>
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-[10px] text-slate-400 uppercase border-b border-slate-100 bg-slate-50">
+                <th className="text-left p-4">PPPoE User</th>
+                <th className="text-left p-4">IP</th>
+                <th className="text-left p-4">MAC</th>
+                <th className="text-left p-4">Interface</th>
+                <th className="text-left p-4">Uptime</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {noVinculadas.map((s, i) => (
+                <tr key={i} className="hover:bg-orange-50/30">
+                  <td className="p-4 font-mono font-bold text-orange-600">{s.usuario}</td>
+                  <td className="p-4 font-mono text-slate-600">{s.ip || '—'}</td>
+                  <td className="p-4 font-mono text-slate-400 text-[10px]">{s.mac || '—'}</td>
+                  <td className="p-4 font-mono text-slate-500">{s.interfaz || '—'}</td>
+                  <td className="p-4 text-slate-400">{s.uptime || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ── Vista: Importar desde MikroTik ───────────────────────────────────────────
+
+const VistaMikrotik = () => {
+  const [interfaces,    setInterfaces]    = useState([]);
+  const [torres,        setTorres]        = useState([]);
+  const [seleccionadas, setSeleccionadas] = useState([]);
+  const [torreDestino,  setTorreDestino]  = useState('');
+  const [loadingIface,  setLoadingIface]  = useState(false);
+  const [loadingImport, setLoadingImport] = useState(false);
+  const [resultado,     setResultado]     = useState(null);
+  const [resultadoAnt,  setResultadoAnt]  = useState(null);
+
+  useEffect(() => {
+    api.get('/admin/torres', { headers: authHeader() })
+       .then(r => setTorres(r.data)).catch(() => {});
+  }, []);
+
+  const descubrirInterfaces = async () => {
+    setLoadingIface(true); setInterfaces([]); setResultadoAnt(null);
+    try {
+      const r = await api.get('/admin/mikrotik/interfaces', { headers: authHeader() });
+      setInterfaces(r.data);
+    } catch (e) {
+      alert('Error al conectar con MikroTik: ' + (e.response?.data?.detalle || e.message));
+    } finally {
+      setLoadingIface(false);
+    }
+  };
+
+  const toggleSeleccion = (nombre) => {
+    setSeleccionadas(prev =>
+      prev.includes(nombre) ? prev.filter(n => n !== nombre) : [...prev, nombre]
+    );
+  };
+
+  const crearAntenas = async () => {
+    if (!torreDestino) return alert('Selecciona una torre destino');
+    if (seleccionadas.length === 0) return alert('Selecciona al menos una interface');
+
+    setLoadingImport(true);
+    try {
+      const payload = interfaces.filter(i => seleccionadas.includes(i.nombre));
+      const r = await api.post('/admin/mikrotik/crear-antenas',
+        { torreId: torreDestino, interfaces: payload },
+        { headers: authHeader() }
+      );
+      setResultadoAnt(r.data);
+      setSeleccionadas([]);
+    } catch (e) {
+      alert('Error: ' + (e.response?.data?.error || e.message));
+    } finally {
+      setLoadingImport(false);
+    }
+  };
+
+  const importarClientes = async () => {
+    setLoadingImport(true); setResultado(null);
+    try {
+      const r = await api.post('/admin/mikrotik/importar', {}, { headers: authHeader() });
+      setResultado(r.data);
+    } catch (e) {
+      alert('Error: ' + (e.response?.data?.error || e.message));
+    } finally {
+      setLoadingImport(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6 max-w-4xl">
+
+      {/* SECCIÓN 1: Descubrir Antenas */}
+      <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 overflow-hidden">
+        <div className="p-6 border-b border-slate-100">
+          <h3 className="font-black text-slate-800 text-base uppercase tracking-wide">
+            📡 Paso 1 — Descubrir Antenas (Interfaces de MikroTik)
+          </h3>
+          <p className="text-xs text-slate-400 mt-1">
+            Extrae las interfaces del router (VLANs, bridges) con sus IPs y subredes, y las convierte en Antenas de una Torre.
+          </p>
+        </div>
+
+        <div className="p-6 space-y-4">
+          <button onClick={descubrirInterfaces} disabled={loadingIface}
+            className="px-6 py-3 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase hover:bg-blue-700 disabled:opacity-50 transition-all">
+            {loadingIface ? '⏳ Consultando MikroTik...' : '🔍 Descubrir Interfaces'}
+          </button>
+
+          {interfaces.length > 0 && (
+            <>
+              <p className="text-xs font-black text-slate-500 uppercase">{interfaces.length} interfaces encontradas — selecciona las que son antenas de clientes:</p>
+
+              <div className="overflow-x-auto rounded-2xl border border-slate-100">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-slate-50 text-[10px] text-slate-400 uppercase">
+                      <th className="p-3 text-left w-10">✓</th>
+                      <th className="p-3 text-left">Interface</th>
+                      <th className="p-3 text-left">Tipo</th>
+                      <th className="p-3 text-left">Gateway</th>
+                      <th className="p-3 text-left">Subred</th>
+                      <th className="p-3 text-left">Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {interfaces.map(i => (
+                      <tr key={i.nombre}
+                        onClick={() => toggleSeleccion(i.nombre)}
+                        className={`cursor-pointer transition-all ${seleccionadas.includes(i.nombre) ? 'bg-blue-50' : 'hover:bg-slate-50'}`}>
+                        <td className="p-3">
+                          <div className={`w-4 h-4 rounded border-2 flex items-center justify-center ${seleccionadas.includes(i.nombre) ? 'bg-blue-600 border-blue-600' : 'border-slate-300'}`}>
+                            {seleccionadas.includes(i.nombre) && <span className="text-white text-[10px]">✓</span>}
+                          </div>
+                        </td>
+                        <td className="p-3 font-mono font-bold text-slate-700">{i.nombre}</td>
+                        <td className="p-3 text-slate-500">{i.tipo}</td>
+                        <td className="p-3 font-mono text-blue-600">{i.ipGateway || '—'}</td>
+                        <td className="p-3 font-mono text-slate-500">{i.subred || '—'}</td>
+                        <td className="p-3">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${i.activa ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-500'}`}>
+                            {i.activa ? 'Activa' : 'Inactiva'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {seleccionadas.length > 0 && (
+                <div className="flex items-center gap-4 p-4 bg-blue-50 rounded-2xl">
+                  <div className="flex-1">
+                    <label className="text-[10px] font-black text-blue-600 uppercase mb-1 block">Torre destino</label>
+                    <select value={torreDestino} onChange={e => setTorreDestino(e.target.value)}
+                      className="w-full p-3 bg-white border border-blue-200 rounded-xl text-sm font-bold text-slate-700">
+                      <option value="">-- Selecciona una Torre --</option>
+                      {torres.map(t => <option key={t.id} value={t.id}>{t.nombre}</option>)}
+                    </select>
                   </div>
-                ))
+                  <button onClick={crearAntenas} disabled={loadingImport || !torreDestino}
+                    className="px-6 py-3 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase hover:bg-blue-700 disabled:opacity-50 transition-all whitespace-nowrap self-end">
+                    {loadingImport ? '⏳ Creando...' : `Crear ${seleccionadas.length} Antenas`}
+                  </button>
+                </div>
+              )}
+
+              {resultadoAnt && (
+                <div className="bg-green-50 border border-green-100 rounded-2xl p-4 text-xs">
+                  <p className="font-black text-green-700 mb-2">✅ Antenas procesadas</p>
+                  <p>Creadas: <b>{resultadoAnt.creadas?.length || 0}</b> — Actualizadas: <b>{resultadoAnt.actualizadas?.length || 0}</b></p>
+                  {resultadoAnt.errores?.length > 0 && (
+                    <p className="text-red-500 mt-1">Errores: {resultadoAnt.errores.map(e => e.interface).join(', ')}</p>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* SECCIÓN 2: Vincular Clientes */}
+      <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 overflow-hidden">
+        <div className="p-6 border-b border-slate-100">
+          <h3 className="font-black text-slate-800 text-base uppercase tracking-wide">
+            👥 Paso 2 — Vincular Clientes desde MikroTik
+          </h3>
+          <p className="text-xs text-slate-400 mt-1">
+            Lee los PPPoE secrets del router y los vincula automáticamente con los Servicios de la BD
+            buscando coincidencias por <code className="bg-slate-100 px-1 rounded">numCliente</code>.
+          </p>
+        </div>
+
+        <div className="p-6">
+          <button onClick={importarClientes} disabled={loadingImport}
+            className="px-6 py-3 bg-slate-900 text-white rounded-2xl font-black text-xs uppercase hover:bg-slate-700 disabled:opacity-50 transition-all">
+            {loadingImport ? '⏳ Procesando...' : '🔗 Vincular Clientes desde MikroTik'}
+          </button>
+
+          {resultado && (
+            <div className="mt-4 bg-slate-50 rounded-2xl p-5 text-xs space-y-2">
+              <p className="font-black text-slate-700 uppercase">{resultado.mensaje}</p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
+                {[
+                  { label: 'Total MikroTik', val: resultado.totalMikrotik, color: 'text-slate-700' },
+                  { label: 'Ya vinculados',  val: resultado.yaVinculados,  color: 'text-green-600'  },
+                  { label: 'Vinculados hoy', val: resultado.vinculados,    color: 'text-blue-600'   },
+                  { label: 'Sin cliente',    val: resultado.sinCliente,    color: 'text-orange-500' },
+                ].map(item => (
+                  <div key={item.label} className="bg-white rounded-xl p-3 border border-slate-100">
+                    <p className={`text-2xl font-black ${item.color}`}>{item.val ?? 0}</p>
+                    <p className="text-[10px] text-slate-400 uppercase font-bold mt-0.5">{item.label}</p>
+                  </div>
+                ))}
+              </div>
+              {resultado.problemas?.length > 0 && (
+                <div className="mt-3">
+                  <p className="font-black text-orange-600 text-[10px] uppercase mb-2">Sin vincular:</p>
+                  <div className="space-y-1 max-h-40 overflow-y-auto">
+                    {resultado.problemas.map((p, i) => (
+                      <div key={i} className="flex justify-between text-[10px] text-slate-500 bg-orange-50 px-3 py-1.5 rounded-lg">
+                        <span className="font-mono font-bold">{p.name}</span>
+                        <span>{p.razon}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               )}
             </div>
           )}
         </div>
-      ))}
+      </div>
     </div>
   );
 };

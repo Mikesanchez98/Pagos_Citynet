@@ -38,16 +38,15 @@ const schemas = {
     password:  z.string().min(8, 'La contraseña debe tener al menos 8 caracteres'),
     nombre:    z.string().min(2, 'El nombre es requerido').max(100),
     numCliente:z.string().min(1, 'El número de cliente es requerido'),
-    paqueteId: z.number({ invalid_type_error: 'paqueteId debe ser un número' }).int().positive(),
-    ip:        z.string().regex(
-                 /^(\d{1,3}\.){3}\d{1,3}$/,
-                 'IP inválida (ej: 192.168.1.10)'
-               ).optional().or(z.literal('')),
-    torreId:   z.number({ invalid_type_error: 'torreId debe ser un número' }).int().positive().optional(),
+    paqueteId: z.string().min(1, 'El plan es requerido'),
+    ip:        z.string().optional().or(z.literal('')),
+    torreId:   z.union([z.number().int().positive(), z.string().regex(/^\d+$/).transform(Number)])
+                .optional()
+                .nullable(),
     direccion: z.string().max(200).optional(),
-    latitud:   z.number().min(-90).max(90).optional(),
-    longitud:  z.number().min(-180).max(180).optional(),
-    telefono:  z.string().regex(/^\d{10}$/, 'El teléfono debe tener 10 dígitos').optional().or(z.literal(''))
+    latitud:   z.union([z.number(), z.string().regex(/^-?\d+(\.\d+)?$/).transform(Number)]).optional().nullable(),
+    longitud:  z.union([z.number(), z.string().regex(/^-?\d+(\.\d+)?$/).transform(Number)]).optional().nullable(),
+    telefono:  z.string().optional().or(z.literal(''))
   }),
 
   // POST /api/paquetes  y  PUT /api/paquetes/:id

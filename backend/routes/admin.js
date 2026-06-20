@@ -10,6 +10,7 @@ const csv = require('csv-parser');
 const bcrypt = require('bcrypt');
 const { validar, schemas } = require('../middleware/validar');
 
+const axios = require('axios');
 const SALT_ROUNDS = 10;
 const fs = require('fs');
 
@@ -120,15 +121,42 @@ router.post('/registrar-cliente', verificarToken, verificarAdmin, validar(schema
 // PATCH /api/admin/servicio/:id/estatus
 router.patch('/servicio/:id/estatus', verificarToken, verificarAdmin, async (req, res) => {
   const { id } = req.params;
-  const { nuevoEstado } = req.body; // "ACTIVO" o "SUSPENDIDO"
+  const { nuevoEstado } = req.body;
+
+  if (!['ACTIVO', 'SUSPENDIDO'].includes(nuevoEstado)) {
+    return res.status(400).json({ error: 'Estado inválido. Usa ACTIVO o SUSPENDIDO.' });
+  }
 
   try {
+    const servicio = await prisma.servicio.findUnique({
+      where: { id: parseInt(id) },
+      include: { cliente: true }
+    });
+    if (!servicio) return res.status(404).json({ error: 'Servicio no encontrado' });
+
     const actualizado = await prisma.servicio.update({
       where: { id: parseInt(id) },
       data: { estado: nuevoEstado }
     });
+
+    // Llamar a MikroTik solo si el servicio tiene usuario vinculado
+    if (servicio.mikrotikUser) {
+      const mikrotikService = require('../services/mikrotik');
+      try {
+        if (nuevoEstado === 'SUSPENDIDO') {
+          await mikrotikService.suspenderUsuario(servicio.mikrotikUser);
+        } else {
+          await mikrotikService.reactivarUsuario(servicio.mikrotikUser);
+        }
+      } catch (mikrotikErr) {
+        console.error(`[MikroTik] Error al ${nuevoEstado} "${servicio.mikrotikUser}":`, mikrotikErr.message);
+        // No bloqueante: el estado en DB ya se actualizó
+      }
+    }
+
     res.json(actualizado);
   } catch (error) {
+    console.error('Error al cambiar estado del servicio:', error);
     res.status(500).json({ error: 'No se pudo cambiar el estado' });
   }
 });
@@ -332,17 +360,32 @@ router.put('/cliente/:id', verificarToken, verificarAdmin, async (req, res) => {
         }
       });
 
-      // 2. Si tiene un servicio, le actualizamos el paquete, torre y dirección
+      // 2. Actualizar o crear el servicio según corresponda
       if (primerServicio) {
+        // Servicio existente: actualizar campos
         await tx.servicio.update({
           where: { id: primerServicio.id },
           data: {
-            direccionIp: ip,
+            direccionIp: ip || null,
             direccion: direccion || null,
-            latitud: latitud ? parseFloat(latitud) : null,
-            longitud: longitud ? parseFloat(longitud) : null,
-            paqueteId: paqueteId ? paqueteId : undefined,
-            torreId: torreId ? parseInt(torreId) : undefined
+            latitud: latitud !== '' && latitud !== null && latitud !== undefined ? parseFloat(latitud) : null,
+            longitud: longitud !== '' && longitud !== null && longitud !== undefined ? parseFloat(longitud) : null,
+            paqueteId: paqueteId || undefined,
+            torreId: torreId ? parseInt(torreId) : null
+          }
+        });
+      } else if (paqueteId) {
+        // Cliente sin servicio y se proporcionó un plan: crear el primer servicio
+        await tx.servicio.create({
+          data: {
+            clienteId: parseInt(id),
+            direccionIp: ip || null,
+            direccion: direccion || null,
+            latitud: latitud !== '' && latitud !== null && latitud !== undefined ? parseFloat(latitud) : null,
+            longitud: longitud !== '' && longitud !== null && longitud !== undefined ? parseFloat(longitud) : null,
+            paqueteId: paqueteId,
+            torreId: torreId ? parseInt(torreId) : null,
+            estado: 'ACTIVO'
           }
         });
       }
@@ -977,62 +1020,73 @@ router.put('/tickets/:id', verificarToken, verificarAdmin, async (req, res) => {
 // ==========================================
 router.post('/clientes/importar', verificarToken, verificarAdmin, upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No se subió ningún archivo.' });
+
+  const { Readable } = require('stream');
   const resultados = [];
-  
-  fs.createReadStream(req.file.path)
+
+  const stream = Readable.from(req.file.buffer.toString('utf-8').split('\n').join('\n'));
+
+  stream
     .pipe(csv())
     .on('data', (data) => resultados.push(data))
     .on('end', async () => {
       try {
         let creados = 0;
+        let omitidos = 0;
         for (const fila of resultados) {
           const { nombre, direccion, telefono, latitud, longitud, numCliente, ip, diaCobro, email, password, plan_nombre } = fila;
 
-          const clienteExistente = await prisma.cliente.findFirst({ where: { numCliente: numCliente } });
-          if (clienteExistente) continue; 
+          if (!numCliente) continue;
 
-          const paquete = await prisma.paquete.findFirst({ where: { nombre: plan_nombre } });
-          const paqueteId = paquete ? paquete.id : null;
+          const clienteExistente = await prisma.cliente.findFirst({ where: { numCliente: numCliente } });
+          if (clienteExistente) { omitidos++; continue; }
+
+          const paquete = plan_nombre ? await prisma.paquete.findFirst({ where: { nombre: plan_nombre } }) : null;
+          const paqueteId = paquete?.id || null;
 
           const passwordPlana = password || '12345678';
           const passwordHash = await bcrypt.hash(passwordPlana, SALT_ROUNDS);
 
+          const emailFinal = email || `${numCliente.toLowerCase()}@citynet.local`;
+
+          const emailExiste = await prisma.usuario.findUnique({ where: { email: emailFinal } });
+          if (emailExiste) { omitidos++; continue; }
+
           const nuevoUsuario = await prisma.usuario.create({
-            data: {
-              email: email || `${numCliente.toLowerCase()}@citynet.com`,
-              password: passwordHash,
-              rol: 'CLIENTE'
-            }
+            data: { email: emailFinal, password: passwordHash, rol: 'CLIENTE' }
           });
 
-          // ⚠️ ACTUALIZADO: Los datos físicos viajan a la creación anidada del servicio
-          const nuevoCliente = await prisma.cliente.create({
+          await prisma.cliente.create({
             data: {
-              nombre: nombre,
+              nombre: nombre || numCliente,
               numCliente: numCliente,
-              telefono: telefono || '',
+              telefono: telefono || null,
+              email: emailFinal,
               diaCobro: parseInt(diaCobro) || 1,
               usuarioId: nuevoUsuario.id,
-              servicios: {
-                create: paqueteId ? [{
+              servicios: paqueteId ? {
+                create: [{
                   paqueteId: paqueteId,
-                  direccionIp: ip || '',
-                  direccion: direccion || '',
+                  direccionIp: ip || null,
+                  direccion: direccion || null,
                   latitud: latitud ? parseFloat(latitud) : null,
                   longitud: longitud ? parseFloat(longitud) : null,
                   estado: 'ACTIVO'
-                }] : []
-              }
+                }]
+              } : undefined
             }
           });
           creados++;
         }
-        fs.unlinkSync(req.file.path);
-        res.json({ mensaje: `¡Importación completada! Se guardaron ${creados} clientes nuevos.` });
+        res.json({ mensaje: `¡Importación completada! ${creados} clientes nuevos, ${omitidos} omitidos (ya existían o sin datos).` });
       } catch (error) {
-        if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
-        res.status(500).json({ error: 'Hubo un error al guardar los clientes en la base de datos.' });
+        console.error('Error al importar CSV:', error);
+        res.status(500).json({ error: 'Error al guardar los clientes. Verifica que las columnas del CSV sean correctas.' });
       }
+    })
+    .on('error', (err) => {
+      console.error('Error al leer CSV:', err);
+      res.status(500).json({ error: 'Error al procesar el archivo CSV.' });
     });
 });
 
@@ -1206,6 +1260,329 @@ router.post('/cobranza/enviar-masivo', verificarToken, verificarAdmin, async (re
 
   } catch (error) {
     return res.status(500).json({ error: 'Error procesando el lote masivo' });
+  }
+});
+
+// ==========================================
+// 📡 INTEGRACIÓN MIKROTIK
+// ==========================================
+
+// POST /api/admin/mikrotik/importar
+// Jala todos los PPPoE secrets del router y los vincula a Servicios existentes.
+// Regla de vinculación: Servicio.cliente.numCliente === secret.name (case-insensitive).
+// Si el servicio ya tiene mikrotikUser, solo actualiza el estado (disabled).
+router.post('/mikrotik/importar', verificarToken, verificarAdmin, async (req, res) => {
+  const mikrotikSvc = require('../services/mikrotik');
+
+  try {
+    const usuarios = await mikrotikSvc.obtenerUsuariosPPPoE();
+
+    if (!usuarios || usuarios.length === 0) {
+      return res.status(502).json({ error: 'No se obtuvieron usuarios de MikroTik. Verifica la conexión.' });
+    }
+
+    let yaVinculados = 0;
+    let vinculados   = 0;
+    let sinCliente   = 0;
+    const problemas  = [];
+
+    for (const u of usuarios) {
+      const mikrotikUser = u.name;
+      if (!mikrotikUser) continue;
+
+      try {
+        // ¿Ya existe un Servicio con este mikrotikUser?
+        const servicioExistente = await prisma.servicio.findUnique({
+          where: { mikrotikUser }
+        });
+
+        if (servicioExistente) {
+          // Solo sincronizar el estado disabled → SUSPENDIDO / ACTIVO
+          await prisma.servicio.update({
+            where: { id: servicioExistente.id },
+            data: { estado: u.disabled ? 'SUSPENDIDO' : 'ACTIVO' }
+          });
+          yaVinculados++;
+          continue;
+        }
+
+        // Buscar cliente cuyo numCliente coincida (exacto o uppercase)
+        const clienteLocal = await prisma.cliente.findFirst({
+          where: {
+            OR: [
+              { numCliente: mikrotikUser },
+              { numCliente: mikrotikUser.toUpperCase() },
+              { numCliente: mikrotikUser.toLowerCase() }
+            ]
+          },
+          include: { servicios: true }
+        });
+
+        if (!clienteLocal) {
+          sinCliente++;
+          problemas.push({ name: mikrotikUser, razon: 'No se encontró cliente con ese numCliente' });
+          continue;
+        }
+
+        // Buscar el primer servicio del cliente sin mikrotikUser asignado
+        const servicioSinVincular = clienteLocal.servicios.find(s => !s.mikrotikUser)
+          ?? clienteLocal.servicios[0];
+
+        if (!servicioSinVincular) {
+          sinCliente++;
+          problemas.push({ name: mikrotikUser, razon: 'El cliente no tiene ningún servicio' });
+          continue;
+        }
+
+        // Vincular
+        await prisma.servicio.update({
+          where: { id: servicioSinVincular.id },
+          data: {
+            mikrotikUser,
+            estado: u.disabled ? 'SUSPENDIDO' : 'ACTIVO'
+          }
+        });
+        vinculados++;
+
+      } catch (err) {
+        problemas.push({ name: mikrotikUser, razon: err.message });
+      }
+    }
+
+    res.json({
+      mensaje:      'Importación desde MikroTik completada',
+      totalMikrotik: usuarios.length,
+      yaVinculados,
+      vinculados,
+      sinCliente,
+      problemas:    problemas.slice(0, 30)
+    });
+  } catch (error) {
+    console.error('[MikroTik importar]:', error.message);
+    res.status(500).json({ error: 'Error al importar desde MikroTik', detalle: error.message });
+  }
+});
+
+// GET /api/admin/mikrotik/estado
+// Verifica la conexión con el router y devuelve servicios vinculados vs total
+router.get('/mikrotik/estado', verificarToken, verificarAdmin, async (req, res) => {
+  const mikrotikSvc = require('../services/mikrotik');
+  try {
+    const health = await mikrotikSvc.healthCheck();
+
+    const [totalServicios, vinculados] = await Promise.all([
+      prisma.servicio.count(),
+      prisma.servicio.count({ where: { mikrotikUser: { not: null } } })
+    ]);
+
+    res.json({
+      conexion:       health,
+      totalServicios,
+      vinculados,
+      sinVincular:    totalServicios - vinculados
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al verificar estado de MikroTik' });
+  }
+});
+
+// PATCH /api/admin/mikrotik/vincular
+// Vincula manualmente un mikrotikUser a un Servicio específico
+router.patch('/mikrotik/vincular', verificarToken, verificarAdmin, async (req, res) => {
+  const { servicioId, mikrotikUser } = req.body;
+  if (!servicioId || !mikrotikUser) {
+    return res.status(400).json({ error: 'servicioId y mikrotikUser son requeridos' });
+  }
+  try {
+    const servicio = await prisma.servicio.update({
+      where: { id: parseInt(servicioId) },
+      data:  { mikrotikUser }
+    });
+    res.json({ mensaje: 'Vínculo establecido', servicio });
+  } catch (error) {
+    if (error.code === 'P2002') {
+      return res.status(409).json({ error: `El usuario "${mikrotikUser}" ya está vinculado a otro servicio` });
+    }
+    res.status(500).json({ error: 'Error al vincular' });
+  }
+});
+
+// GET /api/admin/mikrotik/interfaces
+// Retorna los interfaces del router con sus IPs: base para crear Antenas
+router.get('/mikrotik/interfaces', verificarToken, verificarAdmin, async (req, res) => {
+  const mikrotikSvc = require('../services/mikrotik');
+  try {
+    const [interfaces, ips] = await Promise.all([
+      mikrotikSvc.obtenerInterfaces(),
+      mikrotikSvc.obtenerIPAddresses()
+    ]);
+
+    // Unir cada interface con su IP/subred
+    const resultado = interfaces.map(iface => {
+      const ipInfo = ips.find(ip => ip.interface === iface.name);
+      let subred = null;
+      let ipGateway = null;
+
+      if (ipInfo) {
+        const [addr, prefijo] = ipInfo.address.split('/');
+        ipGateway = addr;
+        // Calcular dirección de red
+        const ipToInt = s => s.split('.').reduce((acc, n) => ((acc << 8) | parseInt(n)) >>> 0, 0);
+        const intToIp = n => [24, 16, 8, 0].map(b => (n >> b) & 0xFF).join('.');
+        const mask = prefijo === '0' ? 0 : (0xFFFFFFFF << (32 - parseInt(prefijo))) >>> 0;
+        const network = intToIp(ipToInt(addr) & mask);
+        subred = `${network}/${prefijo}`;
+      }
+
+      return {
+        nombre:      iface.name,
+        tipo:        iface.type,
+        activa:      iface.running,
+        ipGateway,
+        subred,
+        comentario:  iface.comment
+      };
+    });
+
+    res.json(resultado);
+  } catch (error) {
+    console.error('[MikroTik interfaces]:', error.message);
+    res.status(500).json({ error: 'Error al obtener interfaces de MikroTik', detalle: error.message });
+  }
+});
+
+// POST /api/admin/mikrotik/crear-antenas
+// Crea/actualiza Antenas en la BD a partir de interfaces seleccionadas del MikroTik
+router.post('/mikrotik/crear-antenas', verificarToken, verificarAdmin, async (req, res) => {
+  const { torreId, interfaces } = req.body;
+  // interfaces = [{ nombre, ipGateway, subred, tipo, activa, comentario }]
+
+  if (!torreId || !Array.isArray(interfaces) || interfaces.length === 0) {
+    return res.status(400).json({ error: 'torreId e interfaces son requeridos' });
+  }
+
+  const torre = await prisma.torre.findUnique({ where: { id: parseInt(torreId) } });
+  if (!torre) return res.status(404).json({ error: 'Torre no encontrada' });
+
+  const creadas = [];
+  const actualizadas = [];
+  const errores = [];
+
+  for (const iface of interfaces) {
+    try {
+      const antenaExistente = await prisma.antena.findFirst({
+        where: { OR: [{ interfaceName: iface.nombre }, { nombre: iface.nombre }], torreId: parseInt(torreId) }
+      });
+
+      if (antenaExistente) {
+        await prisma.antena.update({
+          where: { id: antenaExistente.id },
+          data: {
+            ipGateway:     iface.ipGateway || antenaExistente.ipGateway,
+            subred:        iface.subred    || antenaExistente.subred,
+            interfaceName: iface.nombre,
+            tipoInterfaz:  iface.tipo,
+            activa:        iface.activa
+          }
+        });
+        actualizadas.push(iface.nombre);
+      } else {
+        await prisma.antena.create({
+          data: {
+            nombre:        iface.comentario || iface.nombre,
+            interfaceName: iface.nombre,
+            tipoInterfaz:  iface.tipo,
+            ipGateway:     iface.ipGateway || null,
+            subred:        iface.subred    || null,
+            activa:        iface.activa,
+            torreId:       parseInt(torreId)
+          }
+        });
+        creadas.push(iface.nombre);
+      }
+    } catch (err) {
+      errores.push({ interface: iface.nombre, error: err.message });
+    }
+  }
+
+  // Actualizar ipPrincipal de la torre con el host del .env
+  await prisma.torre.update({
+    where: { id: parseInt(torreId) },
+    data: { ipPrincipal: process.env.MIKROTIK_HOST || null }
+  }).catch(() => {});
+
+  res.json({ mensaje: 'Antenas procesadas', creadas, actualizadas, errores });
+});
+
+// GET /api/admin/mikrotik/sesiones-activas
+// Retorna sesiones PPPoE activas con datos de vinculación a Servicios
+router.get('/mikrotik/sesiones-activas', verificarToken, verificarAdmin, async (req, res) => {
+  const mikrotikSvc = require('../services/mikrotik');
+  try {
+    const sesiones = await mikrotikSvc.obtenerSesionesConDetalle();
+
+    // Enriquecer con datos de la BD
+    const sesionesEnriquecidas = await Promise.all(sesiones.map(async (s) => {
+      const servicio = await prisma.servicio.findFirst({
+        where: { mikrotikUser: s.usuario },
+        include: { cliente: true, paquete: true, antena: true, torre: true }
+      });
+
+      return {
+        ...s,
+        vinculado: !!servicio,
+        cliente:   servicio?.cliente?.nombre   || null,
+        numCliente: servicio?.cliente?.numCliente || null,
+        plan:      servicio?.paquete?.nombre   || null,
+        antena:    servicio?.antena?.nombre    || null,
+        torre:     servicio?.torre?.nombre     || null,
+        servicioId: servicio?.id               || null
+      };
+    }));
+
+    res.json(sesionesEnriquecidas);
+  } catch (error) {
+    console.error('[MikroTik sesiones]:', error.message);
+    res.status(500).json({ error: 'Error al obtener sesiones activas', detalle: error.message });
+  }
+});
+
+// ── Geocodificación de dirección → coordenadas ──────────────────────────────
+// GET /api/admin/geocodificar?q=Direccion
+// Usa Mapbox Geocoding API con sesgo de proximidad hacia Colima, MX.
+// La clave queda en el servidor; nunca se expone al navegador.
+router.get('/geocodificar', verificarToken, verificarAdmin, async (req, res) => {
+  const { q } = req.query;
+  if (!q || q.trim().length < 3) {
+    return res.status(400).json({ error: 'La dirección es muy corta para geocodificar' });
+  }
+
+  const mapboxToken = process.env.MAPBOX_TOKEN;
+  if (!mapboxToken) {
+    return res.status(500).json({ error: 'MAPBOX_TOKEN no está configurado en el .env del servidor' });
+  }
+
+  try {
+    const query = encodeURIComponent(`${q.trim()}, Colima, México`);
+    // proximity sesga resultados hacia el centro de Colima (lon, lat)
+    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${query}.json?access_token=${mapboxToken}&country=mx&language=es&proximity=-103.7250,19.2435&limit=1&types=address,place,poi,locality`;
+
+    const response = await axios.get(url);
+    const features = response.data.features;
+
+    if (!features || features.length === 0) {
+      return res.status(404).json({ error: 'No se encontraron coordenadas para esa dirección' });
+    }
+
+    const [longitud, latitud] = features[0].geometry.coordinates;
+    return res.json({
+      latitud,
+      longitud,
+      direccionFormateada: features[0].place_name
+    });
+  } catch (error) {
+    console.error('[Geocodificación Mapbox]:', error.message);
+    return res.status(500).json({ error: 'Error al conectar con el servicio de geocodificación' });
   }
 });
 

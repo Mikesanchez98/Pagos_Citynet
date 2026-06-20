@@ -29,8 +29,7 @@ const CobranzaMasiva = () => {
       const todosLosClientes = res.data;
 
       const morosos = todosLosClientes.map(cliente => {
-        const facturas = cliente?.servicios?.flatMap(s => s.facturas) || [];
-        const facturasPendientes = facturas.filter(f => !f.pagada);
+        const facturasPendientes = (cliente?.facturas || []).filter(f => !f.pagada);
         
         if (facturasPendientes.length > 0) {
           const montoDeuda = facturasPendientes.reduce((acc, f) => acc + Number(f.monto || 0), 0);

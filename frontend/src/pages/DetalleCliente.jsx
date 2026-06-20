@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../api/axios';
+import MapaPinSelector from '../components/MapaPinSelector';
 
 const DetalleCliente = () => {
   const { id } = useParams();
@@ -59,6 +60,7 @@ const DetalleCliente = () => {
   });
   const [paquetesDisponibles, setPaquetesDisponibles] = useState([]);
   const [torresDisponibles, setTorresDisponibles] = useState([]);
+  const [geocodingKeyServicio, setGeocodingKeyServicio] = useState(0);
 
   // 🟢 1. CARGAR CATÁLOGOS CON LAS RUTAS REALES
   const cargarCatalogos = async () => {
@@ -158,15 +160,30 @@ const DetalleCliente = () => {
       setMostrarModalServicio(false);
       setFormServicio({ direccion: '', ip: '', paqueteId: '', torreId: '', latitud: '', longitud: '' });
 
+      fetchClienteDetalle();
     } catch(error){
       console.error("Error al registrar el nuevo servicio:", error);
       alert("Hubo un error al intentar agregar el servicio");
     }
   };
 
+  const geocodificarServicio = async (direccion) => {
+    if (!direccion || direccion.trim().length < 5) return;
+    try {
+      const token = localStorage.getItem('token');
+      const res = await api.get(`/admin/geocodificar?q=${encodeURIComponent(direccion)}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setFormServicio(prev => ({ ...prev, latitud: res.data.latitud, longitud: res.data.longitud }));
+      setGeocodingKeyServicio(k => k + 1); // re-centra el mapa sin re-montarlo
+    } catch (err) {
+      console.warn('No se pudo geocodificar la dirección:', err.response?.data?.error || err.message);
+    }
+  };
+
   // --- FUNCIONES DE PAGOS ---
   const abrirModalPago = () => {
-    const precioSugerido = deudaTotal > 0 ? deudaTotal : (servicioPrincipal?.precio || '');
+    const precioSugerido = deudaTotal > 0 ? deudaTotal : (servicioPrincipal?.paquete?.precio || '');
     setPagoData({ monto: precioSugerido, mesCorrespondiente: '', metodoPago: 'Efectivo', notas: '' });
     setShowModalPago(true);
   };
@@ -202,14 +219,7 @@ const DetalleCliente = () => {
       });
 
       alert("Cobro cancelado con éxito. La cuenta del cliente ha sido actualizada.");
-      
-      // 🟢 REFRESCAR DATOS: Llama a la función que recarga la info del cliente 
-      // para que el pago desaparezca de la lista de inmediato (ej: fetchClienteDatos())
-      if (typeof fetchClienteDatos === 'function') {
-        fetchClienteDatos(); 
-      } else {
-        window.location.reload(); // Alternativa rápida si no tienes la función a la mano
-      }
+      fetchClienteDetalle();
 
     } catch (error) {
       console.error("Error al cancelar el cobro:", error);
@@ -285,12 +295,12 @@ const DetalleCliente = () => {
         <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
           <div>
             <div className="flex items-center gap-3 mb-2">
-              <h1 className="text-3xl font-black text-slate-800 uppercase">{cliente.nombre}</h1>
-              <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase ${servicioPrincipal?.estado === 'ACTIVO' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
-                {servicioPrincipal?.estado || 'SIN SERVICIO'}
-              </span>
-            </div>
-            <p className="text-sm font-bold text-slate-500">📍 {servicioPrincipal.direccion || 'Sin dirección registrada'}</p>
+            <h1 className="text-3xl font-black text-slate-800 uppercase">{cliente.nombre}</h1>
+            <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase ${servicioPrincipal?.estado === 'ACTIVO' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
+              {servicioPrincipal?.estado || 'SIN SERVICIO'}
+            </span>
+          </div>
+          <p className="text-sm font-bold text-slate-500">📍 {servicioPrincipal?.direccion || 'Sin dirección registrada'}</p>
             
             <div className="flex gap-4 mt-4 flex-wrap items-center">
               <span className="bg-slate-50 text-slate-600 px-3 py-1 rounded-lg border border-slate-200 text-xs font-black uppercase flex items-center h-8">
@@ -299,16 +309,25 @@ const DetalleCliente = () => {
               <span className="bg-blue-50 text-blue-600 px-3 py-1 rounded-lg border border-blue-200 text-xs font-black uppercase flex items-center h-8">
                 Grupo: {cliente.diaCobro}
               </span>
-              
-              {cliente.telefono && (
-                <div className="flex gap-2">
-                  <button onClick={abrirWhatsApp} className="bg-green-50 text-green-600 hover:bg-green-500 hover:text-white px-4 rounded-lg border border-green-200 text-xs font-black uppercase flex items-center gap-2 transition-all h-8">
-                    <span className="text-sm">💬</span> Chat
-                  </button>
-                  <button onClick={enviarRecordatorioPago} className="bg-orange-50 text-orange-600 hover:bg-orange-500 hover:text-white px-4 rounded-lg border border-orange-200 text-xs font-black uppercase flex items-center gap-2 transition-all h-8">
-                    <span className="text-sm">🔔</span> Cobrar
-                  </button>
-                </div>
+
+              {cliente.telefono ? (
+                <>
+                  <span className="bg-slate-50 text-slate-600 px-3 py-1 rounded-lg border border-slate-200 text-xs font-black flex items-center h-8">
+                    📞 {cliente.telefono}
+                  </span>
+                  <div className="flex gap-2">
+                    <button onClick={abrirWhatsApp} className="bg-green-50 text-green-600 hover:bg-green-500 hover:text-white px-4 rounded-lg border border-green-200 text-xs font-black uppercase flex items-center gap-2 transition-all h-8">
+                      <span className="text-sm">💬</span> Chat
+                    </button>
+                    <button onClick={enviarRecordatorioPago} className="bg-orange-50 text-orange-600 hover:bg-orange-500 hover:text-white px-4 rounded-lg border border-orange-200 text-xs font-black uppercase flex items-center gap-2 transition-all h-8">
+                      <span className="text-sm">🔔</span> Cobrar
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <span className="bg-slate-50 text-slate-400 px-3 py-1 rounded-lg border border-slate-200 text-xs font-bold flex items-center h-8">
+                  Sin teléfono
+                </span>
               )}
             </div>
           </div>
@@ -578,13 +597,14 @@ const DetalleCliente = () => {
               <form onSubmit={handleAgregarServicio} className="space-y-4">
                 
                 {/* Dirección */}
-                <input 
-                  required 
-                  type="text" 
-                  placeholder="Dirección de la nueva instalación" 
+                <input
+                  required
+                  type="text"
+                  placeholder="Dirección de la nueva instalación"
                   className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold placeholder:text-slate-400"
-                  value={formServicio.direccion} 
-                  onChange={e => setFormServicio({...formServicio, direccion: e.target.value})} 
+                  value={formServicio.direccion}
+                  onChange={e => setFormServicio({...formServicio, direccion: e.target.value})}
+                  onBlur={e => geocodificarServicio(e.target.value)}
                 />
 
                 {/* IP y Torre */}
@@ -611,21 +631,28 @@ const DetalleCliente = () => {
 
                 {/* Coordenadas */}
                 <div className="grid grid-cols-2 gap-4">
-                  <input 
-                    type="number" step="any" 
-                    placeholder="Latitud" 
+                  <input
+                    type="number" step="any"
+                    placeholder="Latitud"
                     className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold placeholder:text-slate-400"
-                    value={formServicio.latitud} 
-                    onChange={e => setFormServicio({...formServicio, latitud: e.target.value})} 
+                    value={formServicio.latitud}
+                    onChange={e => setFormServicio({...formServicio, latitud: e.target.value})}
                   />
-                  <input 
-                    type="number" step="any" 
-                    placeholder="Longitud" 
+                  <input
+                    type="number" step="any"
+                    placeholder="Longitud"
                     className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold placeholder:text-slate-400"
-                    value={formServicio.longitud} 
-                    onChange={e => setFormServicio({...formServicio, longitud: e.target.value})} 
+                    value={formServicio.longitud}
+                    onChange={e => setFormServicio({...formServicio, longitud: e.target.value})}
                   />
                 </div>
+
+                <MapaPinSelector
+                  lat={formServicio.latitud}
+                  lng={formServicio.longitud}
+                  triggerKey={geocodingKeyServicio}
+                  onChange={(lat, lng) => setFormServicio(prev => ({ ...prev, latitud: lat, longitud: lng }))}
+                />
 
                 {/* Paquete */}
                 <select 

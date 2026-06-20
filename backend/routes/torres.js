@@ -35,13 +35,16 @@ router.get('/', verificarToken, verificarAdmin, async (req, res) => {
         activa: antena.activa,
         clientesConectados: antena.servicios.length,
         clientes: antena.servicios.map(servicio => ({
-          clienteId: servicio.clienteId,
-          numCliente: servicio.cliente.numCliente,
-          nombre: servicio.cliente.nombre,
-          plan: servicio.paquete.nombre,
-          ipAsignada: servicio.direccionIp,
-          macAddress: servicio.macAddress,
-          estado: servicio.estado
+          clienteId:            servicio.clienteId,
+          servicioId:           servicio.id,
+          numCliente:           servicio.cliente.numCliente,
+          nombre:               servicio.cliente.nombre,
+          plan:                 servicio.paquete?.nombre   || 'Sin plan',
+          ipAsignada:           servicio.direccionIp,
+          macAddress:           servicio.macAddress,
+          estado:               servicio.estado,
+          mikrotikUser:         servicio.mikrotikUser,
+          ultimaSincronizacion: servicio.ultimaSincronizacion
         }))
       }))
     }));
