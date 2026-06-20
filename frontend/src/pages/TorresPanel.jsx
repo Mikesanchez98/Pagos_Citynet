@@ -1,4 +1,3 @@
-// src/pages/TorresPanel.jsx
 import React, { useState, useEffect } from 'react';
 import api from '../api/axios';
 import { useNavigate, Link } from 'react-router-dom';
@@ -19,6 +18,13 @@ const TorresPanel = () => {
   const [torres, setTorres] = useState([]);
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState({ msg: '', type: '' });
+  
+  // 🆕 Estado para cambiar entre vistas
+  const [vista, setVista] = useState('gestion'); // 'gestion' o 'monitoreo'
+  
+  // 🆕 Estado para torres expandidas en monitoreo
+  const [torreExpandida, setTorreExpandida] = useState(null);
+  const [antenaExpandida, setAntenaExpandida] = useState(null);
 
   useEffect(() => {
     const verificarAcceso = () => {
@@ -54,7 +60,7 @@ const TorresPanel = () => {
     setNombre(torre.nombre);
     setLatitud(torre.latitud || '');
     setLongitud(torre.longitud || '');
-    window.scrollTo({ top: 0, behavior: 'smooth' }); // Sube al formulario
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const cancelarEdicion = () => {
@@ -78,13 +84,11 @@ const TorresPanel = () => {
       };
 
       if (editMode) {
-        // RUTA PARA ACTUALIZAR
         await api.put(`/admin/torres/${torreId}`, data, {
           headers: { Authorization: `Bearer ${token}` }
         });
         setStatus({ msg: 'Torre actualizada correctamente', type: 'success' });
       } else {
-        // RUTA PARA CREAR
         await api.post('/admin/torres', data, {
           headers: { Authorization: `Bearer ${token}` }
         });
@@ -98,6 +102,31 @@ const TorresPanel = () => {
       console.error("Error en la operación:", error);
       setStatus({ msg: 'Error al procesar la solicitud', type: 'error' });
     }
+  };
+
+  // 🆕 Obtener torres con antenas (para monitoreo)
+  const obtenerTorresConAntenas = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await api.get('/torres', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error:', error);
+      return [];
+    }
+  };
+
+  // 🆕 Toggle de torre expandida
+  const toggleTorre = (torreId) => {
+    setTorreExpandida(torreExpandida === torreId ? null : torreId);
+    setAntenaExpandida(null);
+  };
+
+  // 🆕 Toggle de antena expandida
+  const toggleAntena = (antenaId) => {
+    setAntenaExpandida(antenaExpandida === antenaId ? null : antenaId);
   };
 
   if (loading) return <div className="p-10 text-center font-bold text-slate-500 uppercase tracking-widest">Cargando Infraestructura...</div>;
@@ -119,116 +148,344 @@ const TorresPanel = () => {
         </div>
       </nav>
 
-      <div className="max-w-7xl mx-auto mt-8 px-4 grid grid-cols-1 lg:grid-cols-12 gap-8">
-        
-        {/* FORMULARIO ADAPTATIVO */}
-        <div className="lg:col-span-4">
-          <div className={`bg-white p-8 rounded-[2.5rem] shadow-sm border ${editMode ? 'border-blue-200 ring-2 ring-blue-50' : 'border-slate-100'} sticky top-8 transition-all`}>
-            <h2 className="text-xl font-black text-slate-800 mb-2">
-              {editMode ? 'Editar Torre' : 'Nueva Torre'}
-            </h2>
-            <p className="text-[10px] text-slate-400 font-bold uppercase mb-6 tracking-widest">
-              {editMode ? `Editando ID: ${torreId}` : 'Configura un nuevo punto de red'}
-            </p>
-            
-            {status.msg && (
-              <div className={`mb-4 p-3 rounded-2xl text-xs font-bold text-center ${status.type === 'error' ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
-                {status.msg}
-              </div>
-            )}
-
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="text-[10px] font-black text-slate-400 ml-4 mb-1 block uppercase">Nombre</label>
-                <input 
-                  required type="text" 
-                  className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold" 
-                  placeholder="Ej: Cerro Norte" 
-                  value={nombre} 
-                  onChange={e => setNombre(e.target.value)} 
-                />
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-[10px] font-black text-slate-400 ml-4 mb-1 block uppercase">Latitud</label>
-                  <input 
-                    type="number" step="any"
-                    className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold" 
-                    placeholder="19.2..." value={latitud} 
-                    onChange={e => setLatitud(e.target.value)} 
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-black text-slate-400 ml-4 mb-1 block uppercase">Longitud</label>
-                  <input 
-                    type="number" step="any"
-                    className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold" 
-                    placeholder="-103..." value={longitud} 
-                    onChange={e => setLongitud(e.target.value)} 
-                  />
-                </div>
-              </div>
-              
-              <button type="submit" className={`w-full ${editMode ? 'bg-blue-600' : 'bg-slate-900'} text-white py-5 rounded-3xl font-black text-sm tracking-widest hover:opacity-90 transition-all shadow-lg uppercase mt-4`}>
-                {editMode ? 'Actualizar Cambios' : 'Registrar Torre'}
-              </button>
-
-              {editMode && (
-                <button type="button" onClick={cancelarEdicion} className="w-full text-slate-400 text-[10px] font-black uppercase hover:text-slate-600">
-                  Cancelar Edición
-                </button>
-              )}
-            </form>
-          </div>
-        </div>
-
-        {/* TABLA CON BOTÓN DE EDITAR */}
-        <div className="lg:col-span-8">
-          <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden">
-            <table className="w-full text-left">
-              <thead className="bg-slate-50/50 border-b border-slate-100">
-                <tr className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">
-                  <th className="p-6">Torre</th>
-                  <th className="p-6">Coordenadas</th>
-                  <th className="p-6 text-center">Acciones</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {torres.map(torre => (
-                  <tr key={torre.id} className="hover:bg-slate-50/30 transition-colors">
-                    <td className="p-6">
-                      <p className="font-black text-slate-800 text-base">{torre.nombre}</p>
-                      <span className="text-[10px] font-bold text-blue-500 uppercase">ID: {torre.id}</span>
-                    </td>
-                    <td className="p-6">
-                      {torre.latitud ? (
-                         <span className="text-xs font-mono font-bold text-slate-500">
-                           {torre.latitud}, {torre.longitud}
-                         </span>
-                      ) : (
-                        <span className="text-[10px] font-black text-orange-400 bg-orange-50 px-3 py-1 rounded-full uppercase">Sin GPS</span>
-                      )}
-                    </td>
-                    <td className="p-6 text-center">
-                      <button 
-                        onClick={() => prepararEdicion(torre)}
-                        className="p-3 bg-slate-100 text-slate-600 rounded-xl hover:bg-blue-600 hover:text-white transition-all"
-                        title="Editar Coordenadas"
-                      >
-                        {/* Icono de lápiz simple */}
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                        </svg>
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+      {/* 🆕 TABS PARA CAMBIAR VISTA */}
+      <div className="max-w-7xl mx-auto mt-8 px-4">
+        <div className="flex gap-4 mb-8">
+          <button
+            onClick={() => setVista('gestion')}
+            className={`px-6 py-3 rounded-2xl font-black text-sm uppercase transition-all ${
+              vista === 'gestion'
+                ? 'bg-slate-900 text-white shadow-lg'
+                : 'bg-white text-slate-600 border border-slate-100 hover:bg-slate-50'
+            }`}
+          >
+            📝 Gestión de Torres
+          </button>
+          <button
+            onClick={() => setVista('monitoreo')}
+            className={`px-6 py-3 rounded-2xl font-black text-sm uppercase transition-all ${
+              vista === 'monitoreo'
+                ? 'bg-slate-900 text-white shadow-lg'
+                : 'bg-white text-slate-600 border border-slate-100 hover:bg-slate-50'
+            }`}
+          >
+            📡 Torres y Antenas
+          </button>
         </div>
       </div>
+
+      {/* VISTA: GESTIÓN DE TORRES */}
+      {vista === 'gestion' && (
+        <div className="max-w-7xl mx-auto mt-8 px-4 grid grid-cols-1 lg:grid-cols-12 gap-8">
+          <div className="lg:col-span-4">
+            <div className={`bg-white p-8 rounded-[2.5rem] shadow-sm border ${editMode ? 'border-blue-200 ring-2 ring-blue-50' : 'border-slate-100'} sticky top-8 transition-all`}>
+              <h2 className="text-xl font-black text-slate-800 mb-2">
+                {editMode ? 'Editar Torre' : 'Nueva Torre'}
+              </h2>
+              <p className="text-[10px] text-slate-400 font-bold uppercase mb-6 tracking-widest">
+                {editMode ? `Editando ID: ${torreId}` : 'Configura un nuevo punto de red'}
+              </p>
+              
+              {status.msg && (
+                <div className={`mb-4 p-3 rounded-2xl text-xs font-bold text-center ${status.type === 'error' ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
+                  {status.msg}
+                </div>
+              )}
+
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                  <label className="text-[10px] font-black text-slate-400 ml-4 mb-1 block uppercase">Nombre</label>
+                  <input 
+                    required type="text" 
+                    className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold" 
+                    placeholder="Ej: Cerro Norte" 
+                    value={nombre} 
+                    onChange={e => setNombre(e.target.value)} 
+                  />
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-[10px] font-black text-slate-400 ml-4 mb-1 block uppercase">Latitud</label>
+                    <input 
+                      type="number" step="any"
+                      className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold" 
+                      placeholder="19.2..." value={latitud} 
+                      onChange={e => setLatitud(e.target.value)} 
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black text-slate-400 ml-4 mb-1 block uppercase">Longitud</label>
+                    <input 
+                      type="number" step="any"
+                      className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold" 
+                      placeholder="-103..." value={longitud} 
+                      onChange={e => setLongitud(e.target.value)} 
+                    />
+                  </div>
+                </div>
+                
+                <button type="submit" className={`w-full ${editMode ? 'bg-blue-600' : 'bg-slate-900'} text-white py-5 rounded-3xl font-black text-sm tracking-widest hover:opacity-90 transition-all shadow-lg uppercase mt-4`}>
+                  {editMode ? 'Actualizar Cambios' : 'Registrar Torre'}
+                </button>
+
+                {editMode && (
+                  <button type="button" onClick={cancelarEdicion} className="w-full text-slate-400 text-[10px] font-black uppercase hover:text-slate-600">
+                    Cancelar Edición
+                  </button>
+                )}
+              </form>
+            </div>
+          </div>
+
+          <div className="lg:col-span-8">
+            <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden">
+              <table className="w-full text-left">
+                <thead className="bg-slate-50/50 border-b border-slate-100">
+                  <tr className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">
+                    <th className="p-6">Torre</th>
+                    <th className="p-6">Coordenadas</th>
+                    <th className="p-6 text-center">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {torres.map(torre => (
+                    <tr key={torre.id} className="hover:bg-slate-50/30 transition-colors">
+                      <td className="p-6">
+                        <p className="font-black text-slate-800 text-base">{torre.nombre}</p>
+                        <span className="text-[10px] font-bold text-blue-500 uppercase">ID: {torre.id}</span>
+                      </td>
+                      <td className="p-6">
+                        {torre.latitud ? (
+                           <span className="text-xs font-mono font-bold text-slate-500">
+                             {torre.latitud}, {torre.longitud}
+                           </span>
+                        ) : (
+                          <span className="text-[10px] font-black text-orange-400 bg-orange-50 px-3 py-1 rounded-full uppercase">Sin GPS</span>
+                        )}
+                      </td>
+                      <td className="p-6 text-center">
+                        <button 
+                          onClick={() => prepararEdicion(torre)}
+                          className="p-3 bg-slate-100 text-slate-600 rounded-xl hover:bg-blue-600 hover:text-white transition-all"
+                          title="Editar Coordenadas"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                          </svg>
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* VISTA: TORRES Y ANTENAS 🆕 */}
+      {vista === 'monitoreo' && (
+        <TorresMonitoreoVista 
+          torreExpandida={torreExpandida}
+          antenaExpandida={antenaExpandida}
+          toggleTorre={toggleTorre}
+          toggleAntena={toggleAntena}
+          obtenerTorresConAntenas={obtenerTorresConAntenas}
+        />
+      )}
+    </div>
+  );
+};
+
+// 🆕 COMPONENTE INTERNO PARA MONITOREO
+const TorresMonitoreoVista = ({ torreExpandida, antenaExpandida, toggleTorre, toggleAntena, obtenerTorresConAntenas }) => {
+  const [torres, setTorres] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const data = await obtenerTorresConAntenas();
+        setTorres(data);
+      } catch (error) {
+        console.error('Error:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [obtenerTorresConAntenas]);
+
+  if (loading) return <div className="max-w-7xl mx-auto px-4 text-center text-slate-500">Cargando torres y antenas...</div>;
+
+  return (
+    <div className="max-w-7xl mx-auto px-4">
+      {torres.map(torre => (
+        <div
+          key={torre.id}
+          style={{
+            background: '#f5f5f5',
+            border: '1px solid #ddd',
+            borderRadius: '8px',
+            marginBottom: '15px',
+            overflow: 'hidden'
+          }}
+        >
+          {/* HEADER TORRE */}
+          <div
+            onClick={() => toggleTorre(torre.id)}
+            style={{
+              background: '#667eea',
+              color: 'white',
+              padding: '15px',
+              cursor: 'pointer',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}
+          >
+            <div>
+              <h2 style={{ margin: 0 }}>📍 {torre.nombre}</h2>
+              <p style={{ margin: '5px 0 0 0', fontSize: '14px', opacity: 0.9 }}>
+                IP Principal: {torre.ipPrincipal || 'N/A'}
+              </p>
+            </div>
+            <div style={{ fontSize: '24px' }}>
+              {torreExpandida === torre.id ? '▼' : '▶'}
+            </div>
+          </div>
+
+          {/* CONTENIDO TORRE */}
+          {torreExpandida === torre.id && (
+            <div style={{ padding: '15px' }}>
+              {torre.antenas.length === 0 ? (
+                <p style={{ color: '#666' }}>Sin antenas</p>
+              ) : (
+                torre.antenas.map(antena => (
+                  <div
+                    key={antena.id}
+                    style={{
+                      background: 'white',
+                      border: '1px solid #ddd',
+                      borderRadius: '6px',
+                      marginBottom: '10px',
+                      overflow: 'hidden'
+                    }}
+                  >
+                    {/* HEADER ANTENA */}
+                    <div
+                      onClick={() => toggleAntena(antena.id)}
+                      style={{
+                        background: antena.activa ? '#e8f5e9' : '#ffebee',
+                        borderLeft: `4px solid ${antena.activa ? '#28a745' : '#dc3545'}`,
+                        padding: '12px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center'
+                      }}
+                    >
+                      <div>
+                        <h3 style={{ margin: 0 }}>
+                          📡 {antena.nombre}
+                          {!antena.activa && (
+                            <span style={{
+                              marginLeft: '10px',
+                              fontSize: '12px',
+                              color: '#dc3545'
+                            }}>
+                              (INACTIVA)
+                            </span>
+                          )}
+                        </h3>
+                        <p style={{ margin: '5px 0 0 0', fontSize: '13px', color: '#666' }}>
+                          IP: {antena.ipGateway} | Subred: {antena.subred}
+                        </p>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                        <span style={{
+                          background: '#667eea',
+                          color: 'white',
+                          padding: '4px 12px',
+                          borderRadius: '20px',
+                          fontSize: '12px'
+                        }}>
+                          {antena.clientesConectados} clientes
+                        </span>
+                        <div style={{ fontSize: '18px' }}>
+                          {antenaExpandida === antena.id ? '▼' : '▶'}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* CLIENTES DE LA ANTENA */}
+                    {antenaExpandida === antena.id && (
+                      <div style={{ padding: '12px', background: '#fafafa' }}>
+                        {antena.clientes.length === 0 ? (
+                          <p style={{ color: '#999', margin: 0 }}>
+                            Sin clientes conectados
+                          </p>
+                        ) : (
+                          <table style={{
+                            width: '100%',
+                            borderCollapse: 'collapse',
+                            fontSize: '13px'
+                          }}>
+                            <thead>
+                              <tr style={{ borderBottom: '1px solid #ddd' }}>
+                                <th style={{ textAlign: 'left', padding: '8px' }}>Cliente</th>
+                                <th style={{ textAlign: 'left', padding: '8px' }}>Número</th>
+                                <th style={{ textAlign: 'left', padding: '8px' }}>MAC</th>
+                                <th style={{ textAlign: 'left', padding: '8px' }}>IP</th>
+                                <th style={{ textAlign: 'left', padding: '8px' }}>Plan</th>
+                                <th style={{ textAlign: 'left', padding: '8px' }}>Estado</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {antena.clientes.map((cliente, idx) => (
+                                <tr
+                                  key={idx}
+                                  style={{
+                                    borderBottom: '1px solid #e0e0e0',
+                                    background: idx % 2 === 0 ? '#fff' : '#f9f9f9'
+                                  }}
+                                >
+                                  <td style={{ padding: '8px' }}>{cliente.nombre}</td>
+                                  <td style={{ padding: '8px' }}>{cliente.numCliente}</td>
+                                  <td style={{ padding: '8px', fontFamily: 'monospace', fontSize: '11px' }}>
+                                    {cliente.macAddress || 'N/A'}
+                                  </td>
+                                  <td style={{ padding: '8px', fontFamily: 'monospace', fontSize: '12px' }}>
+                                    {cliente.ipAsignada}
+                                  </td>
+                                  <td style={{ padding: '8px' }}>{cliente.plan}</td>
+                                  <td style={{ padding: '8px' }}>
+                                    <span style={{
+                                      background: cliente.estado === 'ACTIVO' ? '#c8e6c9' : '#ffccbc',
+                                      color: cliente.estado === 'ACTIVO' ? '#2e7d32' : '#d84315',
+                                      padding: '2px 8px',
+                                      borderRadius: '12px',
+                                      fontSize: '11px'
+                                    }}>
+                                      {cliente.estado}
+                                    </span>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+      ))}
     </div>
   );
 };

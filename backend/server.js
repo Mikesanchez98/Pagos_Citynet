@@ -20,6 +20,30 @@ const rutasPagos = require('./routes/pagos');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// 🆕 MIKROTIK
+const mikrotikService = require('./services/mikrotik');
+
+// Conectar a MikroTik al iniciar
+(async () => {
+  try {
+    await mikrotikService.connect();
+    console.log('🟢 MikroTik conectado');
+  } catch (error) {
+    console.error('🔴 Error conectando a MikroTik:', error.message);
+  }
+})();
+
+// Desconectar al apagar
+process.on('SIGTERM', async () => {
+  await mikrotikService.disconnect();
+  process.exit(0);
+});
+
+// 🆕 Sincronización periódica (solo en desarrollo local, no en Vercel)
+if (process.env.VERCEL !== '1') {
+  require('./services/cron-sincronizacion')();
+}
+
 const listaBlanca = [
   'http://localhost:5173',
   'http://127.0.0.1:5173',
@@ -52,6 +76,14 @@ app.use('/api/cliente', clienteRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/pagos', rutasPagos);
 app.use('/api/paquetes', paqueteRoutes);
+// 🆕 RUTAS MIKROTIK
+const torresRoutes = require('./routes/torres');
+const cambiosAntenaRoutes = require('./routes/cambios-antena');
+const monitoreoRoutes = require('./routes/monitoreo');
+
+app.use('/api/torres', torresRoutes);
+app.use('/api/cambios-antena', cambiosAntenaRoutes);
+app.use('/api/monitoreo', monitoreoRoutes);
 //if (process.env.VERCEL !== '1') {
 //  iniciarCronFacturacion(); 
 //}

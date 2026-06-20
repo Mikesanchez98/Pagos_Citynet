@@ -34,39 +34,62 @@ model Cliente {
   facturas    Factura[]
   pagos       Pago[]
   tickets     Ticket[]
+
+  clientesMikrotik  ClienteMikrotik[]
 }
 
 model Torre {
   id          Int        @id @default(autoincrement())
   nombre      String
+  descripcion String?
   latitud     Float?
   longitud    Float?
+
+  //Ip principal de la torre
+  ipPrincipal String?
   
-  // Relacion: Una torre alimenta a muchas instalaciones/servicios
-  servicios   Servicio[] 
+  // Relaciones
+  servicios   Servicio[]
+  antenas     Antena[]
+
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
 }
 
 model Servicio {
   id          Int      @id @default(autoincrement())
   estado      String   @default("ACTIVO")
+  
+  // 🆕 MAC ADDRESS
+  macAddress  String?
+  
   direccionIp String?  @default("192.168.1.1")
   
-  // 📍 Datos físicos de esta instalación en particular
+  // 📍 Datos físicos
   direccion   String?
   latitud     Float?
   longitud    Float?
   
-  // Relacion con la torre
+  // Relación con Torre
   torreId     Int?
   torre       Torre?   @relation(fields: [torreId], references: [id])
   
-  // 📦 El paquete contratado para esta instalación (Temporalmente opcional para salvar tus datos)
+  // 🆕 Relación con Antena (IMPORTANTE - SIN ESTO FALLA)
+  antenaId    Int?
+  antena      Antena?  @relation(fields: [antenaId], references: [id], onDelete: SetNull)
+  
+  // 🆕 Sincronización
+  ultimaSincronizacion DateTime?
+  
+  // Paquete y Cliente
   paqueteId   String
   paquete     Paquete @relation(fields: [paqueteId], references: [id])
 
-  // 👤 El dueño de este servicio
   clienteId   Int
   cliente     Cliente @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  
+  // 🆕 Historial de cambios
+  cambiosAntena CambioAntena[]
 }
 
 model Factura {
@@ -118,4 +141,86 @@ model Paquete {
 
   // Los servicios que tienen contratado este paquete
   servicios   Servicio[]
+}
+
+model Antena{
+  id          Int        @id @default(autoincrement())
+  nombre      String     @unique
+  descripcion String?
+
+  //IP de la antena (gateway)
+  ipGateway   String?
+  subred      String?
+
+  //Relacion con Torre
+  torreId     Int
+  torre       Torre      @relation(fields: [torreId], references: [id], onDelete: Cascade)
+
+  //Relacion con Servicios 
+  servicios   Servicio[]
+
+  ///Metadata de Mikrotik
+  interfaceName String?
+  tipoInterfaz  String?
+
+  activa     Boolean     @default(true)
+
+  //Historial de cambios
+  cambiosAnterior CambioAntena[]  @relation("CambioAnterior")
+  cambiosActual   CambioAntena[]  @relation("CambioActual")
+
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
+
+model CambioAntena {
+  id              Int       @id @default(autoincrement())
+  
+  servicioId      Int
+  servicio        Servicio  @relation(fields: [servicioId], references: [id], onDelete: Cascade)
+  
+  antenaAnteriorId Int?
+  antenaAnterior  Antena?   @relation("CambioAnterior", fields: [antenaAnteriorId], references: [id])
+  
+  antenaActualId  Int
+  antenaActual    Antena    @relation("CambioActual", fields: [antenaActualId], references: [id])
+  
+  ipAnterior      String?
+  ipActual        String?
+  
+  macAddress      String?
+  
+  detectedBy      String
+  razon           String?
+  
+  timestamp       DateTime  @default(now())
+}
+
+// ===== MIKROTIK INTEGRATION =====
+
+model ClienteMikrotik {
+  id              Int     @id @default(autoincrement())
+  numCliente      String  @unique
+  nombreMikrotik  String
+  profile         String
+  routerOrigen    String
+  servicio        String
+  deshabilitado   Boolean @default(false)
+  
+  sincronizado    Boolean @default(false)
+  clienteId       Int?
+  cliente         Cliente? @relation(fields: [clienteId], references: [id], onDelete: SetNull)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model MikrotikLog {
+  id        Int     @id @default(autoincrement())
+  accion    String
+  cliente   String
+  router    String
+  estado    String
+  error     String?
+  timestamp DateTime @default(now())
 }
