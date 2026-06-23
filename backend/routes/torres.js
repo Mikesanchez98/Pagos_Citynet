@@ -26,6 +26,8 @@ router.get('/', verificarToken, verificarAdmin, async (req, res) => {
       id: torre.id,
       nombre: torre.nombre,
       ipPrincipal: torre.ipPrincipal,
+      latitud: torre.latitud,
+      longitud: torre.longitud,
       antenas: torre.antenas.map(antena => ({
         id: antena.id,
         nombre: antena.nombre,

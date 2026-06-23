@@ -11,15 +11,16 @@ router.get('/perfil', verificarToken, async (req, res) => {
   try {
     const cliente = await prisma.cliente.findUnique({
       where: { usuarioId: req.usuarioId },
-      include: { 
+      include: {
         usuario: true,
         servicios: {
-          include: { 
-            paquete: true  // Traer datos del paquete del servicio
+          include: {
+            paquete: true,
+            facturas: {
+              where: { pagada: false },
+              orderBy: { createdAt: 'desc' }
+            }
           }
-        },
-        facturas: { 
-          where: { pagada: false }  // ← Facturas están a nivel de Cliente, no Servicio
         }
       }
     });
@@ -28,40 +29,52 @@ router.get('/perfil', verificarToken, async (req, res) => {
       return res.status(404).json({ error: "Datos de servicio incompletos" });
     }
 
-    // Suma de facturas pendientes
-    const montoPendiente = cliente.facturas.reduce((acc, f) => acc + Number(f.monto), 0);
-    
-    // Tomamos datos representativos del primer servicio para la UI
+    // Suma de todas las facturas pendientes de todos los servicios
+    const montoPendiente = cliente.servicios.reduce((total, s) => {
+      return total + s.facturas.reduce((sum, f) => sum + Number(f.monto), 0);
+    }, 0);
+
+    // Fecha de vencimiento más próxima entre todos los servicios
+    const todasLasFacturas = cliente.servicios.flatMap(s => s.facturas);
+    const proximoVencimiento = todasLasFacturas.sort(
+      (a, b) => new Date(a.vencimiento) - new Date(b.vencimiento)
+    )[0]?.vencimiento || null;
+
     const servicioPrincipal = cliente.servicios[0];
 
     res.json({
-      // Datos del cliente
       id: cliente.id,
       nombre: cliente.nombre,
       numCliente: cliente.numCliente,
-      
-      // Datos del plan/paquete (del primer servicio)
+
+      // Campos legacy para compatibilidad con partes antiguas del frontend
       plan: servicioPrincipal.paquete?.nombre || 'Plan no especificado',
       ip: servicioPrincipal.direccionIp || '0.0.0.0',
-      
-      // Datos financieros
-      montoPendiente: montoPendiente,
-      vencimiento: cliente.facturas[0]?.vencimiento || null,
-      
-      // Estado del servicio
       estado: servicioPrincipal.estado,
-      
-      // Información de contacto
+
+      montoPendiente: montoPendiente,
+      vencimiento: proximoVencimiento,
+
       direccion: cliente.direccion || servicioPrincipal.direccion || 'Dirección no disponible',
       telefono: cliente.telefono || 'Teléfono no registrado',
       correo: cliente.usuario.email || cliente.email || 'Correo no registrado',
-      
-      // Datos adicionales para otros usos
+
+      // Estructura completa por servicio para el nuevo Dashboard
       servicios: cliente.servicios.map(s => ({
         id: s.id,
         estado: s.estado,
-        paquete: s.paquete?.nombre,
-        precio: s.paquete?.precio
+        direccion: s.direccion || null,
+        direccionIp: s.direccionIp || null,
+        paquete: {
+          nombre: s.paquete?.nombre || null,
+          precio: s.paquete?.precio || 0
+        },
+        facturas: s.facturas.map(f => ({
+          id: f.id,
+          monto: f.monto,
+          vencimiento: f.vencimiento,
+          pagada: f.pagada
+        }))
       }))
     });
   } catch (error) {

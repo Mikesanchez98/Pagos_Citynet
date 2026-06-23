@@ -9,7 +9,8 @@ const Dashboard = () => {
   const navigate = useNavigate();
   const [datos, setDatos] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('resumen'); 
+  const [activeTab, setActiveTab] = useState('resumen');
+  const [serviciosSeleccionados, setServiciosSeleccionados] = useState([]);
 
   useEffect(() => {
     const cargarDatos = async () => {
@@ -48,15 +49,38 @@ const Dashboard = () => {
 
   const handlePagar = async () => {
     try {
-      const token = localStorage.getItem('token'); 
+      const token = localStorage.getItem('token');
 
       if (!token) {
         alert('No se encontró tu sesión. Por favor, vuelve a iniciar sesión.');
         return;
       }
 
-      const respuesta = await api.post('/pagos/crear-checkout', {}, {
-        headers: { Authorization: `Bearer ${token}` } 
+      // Si no hay servicios seleccionados, seleccionar todos
+      const servicios = serviciosSeleccionados.length > 0
+        ? serviciosSeleccionados
+        : datos?.servicios?.map(s => s.id) || [];
+
+      if (servicios.length === 0) {
+        alert('No hay servicios para pagar.');
+        return;
+      }
+
+      // Calcular monto total de servicios seleccionados
+      const montoTotal = datos?.servicios
+        ?.filter(s => servicios.includes(s.id))
+        ?.reduce((sum, s) => sum + (s.paquete?.precio || 0), 0) || 0;
+
+      if (montoTotal <= 0) {
+        alert('El monto a pagar no es válido.');
+        return;
+      }
+
+      const respuesta = await api.post('/pagos/crear-checkout', {
+        servicios: servicios,
+        monto: montoTotal
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
       });
 
       if (respuesta.data && respuesta.data.url) {
@@ -66,48 +90,6 @@ const Dashboard = () => {
     } catch (error) {
       console.error('Error al generar pago:', error);
       alert('Hubo un error al generar tu enlace de pago.');
-    }
-  };
-
-  // --- ACTUALIZACIÓN DE LA FUNCIÓN DE PDF ---
-  const handleDescargarRecibo = async () => {
-    try {
-      const token = localStorage.getItem('token');
-      if (!token) {
-        alert('Sesión expirada. Por favor, vuelve a iniciar sesión.');
-        return;
-      }
-
-      // Buscamos la factura pendiente si existe, o mandamos el ID necesario
-      const facturaId = datos?.servicios?.[0]?.facturas?.[0]?.id; 
-      
-      if (!facturaId) {
-        alert('No se encontró ninguna factura disponible para descargar.');
-        return;
-      }
-
-      // Hacemos la petición al backend esperando un archivo (blob)
-      const respuesta = await api.get(`/cliente/factura/${facturaId}/pdf`, {
-        headers: { Authorization: `Bearer ${token}` },
-        responseType: 'blob' // CRUCIAL: Le dice a Axios que viene un archivo binario
-      });
-
-      // Crear un enlace temporal en el navegador para forzar la descarga
-      const blob = new Blob([respuesta.data], { type: 'application/pdf' });
-      const urlPdf = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = urlPdf;
-      link.setAttribute('download', `factura-${datos.numCliente}-${facturaId}.pdf`);
-      document.body.appendChild(link);
-      link.click();
-      
-      // Limpieza
-      link.parentNode.removeChild(link);
-      window.URL.revokeObjectURL(urlPdf);
-
-    } catch (error) {
-      console.error('Error al descargar el PDF:', error);
-      alert('Hubo un error al generar o descargar tu PDF.');
     }
   };
 
@@ -207,41 +189,113 @@ const Dashboard = () => {
           {activeTab === 'resumen' ? (
             <div className="space-y-6">
               
-              {/* Tarjeta 1: Estado del Servicio */}
-              <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-1">Plan Contratado</p>
-                  <p className="font-extrabold text-slate-800 text-xl">{datos?.plan || 'Básico'}</p>
-                  <div className="flex items-center gap-2 mt-2">
-                      <span className="text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded font-mono uppercase">IP asignada</span>
-                      <p className="text-sm font-mono text-blue-600 font-semibold">{datos?.ip || '0.0.0.0'}</p>
+              {/* Tarjeta 1: Mis Servicios */}
+              <div className="space-y-4">
+                <h3 className="text-slate-800 font-bold ml-1">Mis Servicios</h3>
+
+                {datos?.servicios && datos.servicios.length > 0 ? (
+                  <div className="space-y-3">
+                    {datos.servicios.map((servicio, index) => (
+                      <div key={servicio.id} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                        <div className="flex items-start gap-4">
+                          {/* Checkbox */}
+                          <div className="flex items-center mt-1">
+                            <input
+                              type="checkbox"
+                              id={`servicio-${servicio.id}`}
+                              checked={serviciosSeleccionados.includes(servicio.id)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setServiciosSeleccionados([...serviciosSeleccionados, servicio.id]);
+                                } else {
+                                  setServiciosSeleccionados(serviciosSeleccionados.filter(id => id !== servicio.id));
+                                }
+                              }}
+                              className="w-5 h-5 text-blue-600 rounded cursor-pointer"
+                            />
+                          </div>
+
+                          {/* Información del Servicio */}
+                          <div className="flex-1">
+                            <div className="flex items-center justify-between mb-2">
+                              <div>
+                                <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">Servicio #{index + 1}</p>
+                                <p className="font-bold text-slate-800 text-lg">{servicio.paquete?.nombre || 'Plan'}</p>
+                              </div>
+                              <span className={`text-xs font-bold uppercase px-3 py-1.5 rounded-full ${
+                                servicio.estado === 'ACTIVO'
+                                  ? 'bg-green-100 text-green-700'
+                                  : 'bg-red-100 text-red-700'
+                              }`}>
+                                {servicio.estado}
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2 mb-3">
+                              <div className="bg-slate-50 p-2 rounded-lg">
+                                <p className="text-[10px] text-slate-400 font-bold uppercase">Dirección</p>
+                                <p className="text-sm font-semibold text-slate-700">{servicio.direccion || 'N/A'}</p>
+                              </div>
+                              <div className="bg-slate-50 p-2 rounded-lg">
+                                <p className="text-[10px] text-slate-400 font-bold uppercase">IP Asignada</p>
+                                <p className="text-sm font-mono text-blue-600">{servicio.direccionIp || '0.0.0.0'}</p>
+                              </div>
+                            </div>
+
+                            {/* Facturas del Servicio */}
+                            {servicio.facturas && servicio.facturas.length > 0 ? (
+                              <div className="space-y-2 pt-2 border-t border-slate-100">
+                                <p className="text-[10px] text-slate-400 font-bold uppercase">Facturas Pendientes:</p>
+                                {servicio.facturas
+                                  .filter(f => !f.pagada)
+                                  .map(factura => (
+                                    <div key={factura.id} className="flex justify-between items-center bg-yellow-50 p-2 rounded-lg border border-yellow-100">
+                                      <span className="text-sm font-bold text-slate-700">${Number(factura.monto).toFixed(2)}</span>
+                                      <span className="text-[9px] text-yellow-700 font-bold uppercase">
+                                        Vence: {new Date(factura.vencimiento).toLocaleDateString('es-MX')}
+                                      </span>
+                                    </div>
+                                  ))}
+                              </div>
+                            ) : (
+                              <div className="pt-2 border-t border-slate-100 text-center">
+                                <p className="text-[10px] text-green-600 font-bold">✅ Este servicio está al día</p>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Monto del Servicio */}
+                          <div className="text-right">
+                            <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-1">Precio/Mes</p>
+                            <p className="text-xl font-black text-slate-800">${Number(servicio.paquete?.precio || 0).toFixed(2)}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                </div>
-                
-                <div className="flex flex-col items-end">
-                  <span className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-2">Estatus</span>
-                  {datos?.estado?.toLowerCase() === 'activo' ? (
-                    <div className="flex items-center gap-2 bg-green-50 text-green-700 px-4 py-1.5 rounded-full border border-green-200">
-                      <span className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse"></span>
-                      <span className="text-sm font-bold uppercase">Activo</span>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2 bg-red-50 text-red-700 px-4 py-1.5 rounded-full border border-red-200">
-                      <span className="w-2.5 h-2.5 rounded-full bg-red-500"></span>
-                      <span className="text-sm font-bold uppercase">Suspendido</span>
-                    </div>
-                  )}
-                </div>
+                ) : (
+                  <div className="bg-slate-50 p-6 rounded-2xl text-center text-slate-500 font-medium">
+                    No tienes servicios registrados
+                  </div>
+                )}
               </div>
 
               {/* Tarjeta 2: Resumen Financiero */}
               <div className="bg-white rounded-3xl shadow-xl border border-slate-100 overflow-hidden">
                 <div className="p-8 text-center border-b border-slate-50">
-                  <p className="text-slate-500 font-bold uppercase text-xs tracking-widest mb-3">Total a Pagar</p>
+                  <p className="text-slate-500 font-bold uppercase text-xs tracking-widest mb-3">
+                    {serviciosSeleccionados.length > 0 ? 'Total Seleccionado' : 'Total a Pagar'}
+                  </p>
                   <div className="flex items-center justify-center gap-1">
                       <span className="text-2xl font-bold text-slate-400 self-start mt-2">$</span>
                       <h2 className="text-6xl font-black text-slate-800 tracking-tighter">
-                          {Number(datos?.montoPendiente || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                          {Number(
+                            serviciosSeleccionados.length > 0
+                              ? datos?.servicios
+                                  ?.filter(s => serviciosSeleccionados.includes(s.id))
+                                  ?.reduce((sum, s) => sum + (s.paquete?.precio || 0), 0)
+                              : datos?.montoPendiente || 0
+                          ).toLocaleString('es-MX', { minimumFractionDigits: 2 })}
                       </h2>
                       <span className="text-lg text-slate-400 font-bold ml-2">MXN</span>
                   </div>
@@ -254,59 +308,78 @@ const Dashboard = () => {
                 </div>
                 
                 <div className="p-6 bg-slate-50/50">
-                  {datos?.montoPendiente <= 0 ? (
+                  {serviciosSeleccionados.length === 0 && datos?.montoPendiente <= 0 ? (
                     <div className="w-full py-4 text-center text-green-700 font-bold bg-green-100/50 rounded-2xl border border-green-200 flex items-center justify-center gap-2">
                       ✨ ¡Tu cuenta está al día! No tienes pagos pendientes.
                     </div>
                   ) : (
-                    <button 
-                      onClick={handlePagar}
-                      className="w-full bg-primary hover:bg-blue-700 text-white font-black py-5 rounded-2xl shadow-lg shadow-blue-200/50 transition-all active:scale-[0.98] text-xl flex items-center justify-center gap-3">
-                      💳 PAGAR AHORA
-                    </button>
+                    <div className="space-y-3">
+                      <button
+                        onClick={handlePagar}
+                        className="w-full bg-primary hover:bg-blue-700 text-white font-black py-5 rounded-2xl shadow-lg shadow-blue-200/50 transition-all active:scale-[0.98] text-xl flex items-center justify-center gap-3">
+                        💳 {serviciosSeleccionados.length > 0 ? `PAGAR ${serviciosSeleccionados.length} SERVICIO(S)` : 'PAGAR AHORA'}
+                      </button>
+                      {serviciosSeleccionados.length > 0 && (
+                        <button
+                          onClick={() => setServiciosSeleccionados([])}
+                          className="w-full bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold py-2 rounded-lg text-sm">
+                          Limpiar Selección
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>
 
-              {/* Historial Rápido y PDF */}
+              {/* Resumen de Servicios */}
               <div className="pt-2">
-                <h3 className="text-slate-800 font-bold mb-4 ml-1">Estado de Cuenta</h3>
-                <div className={`p-5 rounded-2xl shadow-sm border flex justify-between items-center transition-hover ${datos?.montoPendiente > 0 ? 'bg-white border-slate-100 hover:border-red-200' : 'bg-green-50 border-green-100'}`}>
-                  
-                  <div className="flex items-center gap-4">
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xl ${datos?.montoPendiente > 0 ? 'bg-blue-50' : 'bg-green-100'}`}>
-                      {datos?.montoPendiente > 0 ? '📄' : '✅'}
-                    </div>
-                    <div>
-                      <p className={`font-bold ${datos?.montoPendiente > 0 ? 'text-slate-700' : 'text-green-800'}`}>
-                        {datos?.montoPendiente > 0 ? 'Pago de Mensualidad' : 'Mensualidad Cubierta'}
-                      </p>
-                      <p className={`${datos?.montoPendiente > 0 ? 'text-slate-400' : 'text-green-600'} text-xs font-medium`}>Servicio de Internet Fibra</p>
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-center gap-5">
-                    <div className="text-right">
-                        <p className={`font-black ${datos?.montoPendiente > 0 ? 'text-slate-700' : 'text-green-700'}`}>
-                          ${Number(datos?.montoPendiente || 0).toFixed(2)}
-                        </p>
-                        {datos?.montoPendiente > 0 ? (
-                          <p className="text-[10px] text-red-500 font-bold uppercase">Pendiente</p>
-                        ) : (
-                          <p className="text-[10px] text-green-600 font-bold uppercase">Pagado</p>
-                        )}
-                    </div>
-                    
-                    <button 
-                      onClick={handleDescargarRecibo}
-                      className="p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-xl transition-colors flex flex-col items-center justify-center gap-0.5 border border-slate-200 shadow-sm"
-                      title="Descargar Recibo en PDF"
-                    >
-                      <span className="text-lg leading-none">📄</span>
-                      <span className="text-[9px] font-bold uppercase tracking-wider">PDF</span>
-                    </button>
-                  </div>
+                <h3 className="text-slate-800 font-bold mb-4 ml-1">Resumen por Servicio</h3>
+                <div className="space-y-3">
+                  {datos?.servicios && datos.servicios.length > 0 ? (
+                    datos.servicios.map((servicio) => {
+                      const tieneDeuda = servicio.facturas?.some(f => !f.pagada) || false;
+                      const montoDeuda = servicio.facturas
+                        ?.filter(f => !f.pagada)
+                        ?.reduce((sum, f) => sum + f.monto, 0) || 0;
 
+                      return (
+                        <div key={servicio.id} className={`p-5 rounded-2xl shadow-sm border flex justify-between items-center ${
+                          tieneDeuda
+                            ? 'bg-white border-slate-100 hover:border-yellow-200'
+                            : 'bg-green-50 border-green-100'
+                        }`}>
+                          <div className="flex items-center gap-4">
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xl ${
+                              tieneDeuda ? 'bg-yellow-50' : 'bg-green-100'
+                            }`}>
+                              {tieneDeuda ? '⚠️' : '✅'}
+                            </div>
+                            <div>
+                              <p className={`font-bold ${tieneDeuda ? 'text-slate-700' : 'text-green-800'}`}>
+                                {servicio.paquete?.nombre || 'Servicio'}
+                              </p>
+                              <p className={`${tieneDeuda ? 'text-slate-400' : 'text-green-600'} text-xs font-medium`}>
+                                {servicio.direccion || 'Sin dirección'}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="text-right">
+                            <p className={`font-black ${tieneDeuda ? 'text-yellow-700' : 'text-green-700'}`}>
+                              ${Number(montoDeuda || 0).toFixed(2)}
+                            </p>
+                            <p className={`text-[10px] font-bold uppercase ${
+                              tieneDeuda ? 'text-yellow-600' : 'text-green-600'
+                            }`}>
+                              {tieneDeuda ? 'Por Pagar' : 'Al Día'}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <p className="text-center text-slate-400 font-medium">Sin servicios</p>
+                  )}
                 </div>
               </div>
 

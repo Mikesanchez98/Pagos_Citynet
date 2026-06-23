@@ -84,6 +84,10 @@ const monitoreoRoutes = require('./routes/monitoreo');
 app.use('/api/torres', torresRoutes);
 app.use('/api/cambios-antena', cambiosAntenaRoutes);
 app.use('/api/monitoreo', monitoreoRoutes);
+
+// 🆕 RUTAS DE FACTURACIÓN
+const facturacionRoutes = require('./routes/facturacion');
+app.use('/api/facturacion', facturacionRoutes);
 //if (process.env.VERCEL !== '1') {
 //  iniciarCronFacturacion(); 
 //}

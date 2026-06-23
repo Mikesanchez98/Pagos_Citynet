@@ -161,7 +161,7 @@ router.patch('/servicio/:id/estatus', verificarToken, verificarAdmin, async (req
   }
 });
 
-// POST /api/admin/cliente/:id/generar-factura (⚠️ AHORA ES POR CLIENTE, NO POR SERVICIO)
+// POST /api/admin/cliente/:id/generar-factura (🆕 GENERA UNA FACTURA POR SERVICIO)
 router.post('/cliente/:id/generar-factura', verificarToken, verificarAdmin, async (req, res) => {
   const clienteId = parseInt(req.params.id);
   if (isNaN(clienteId)) return res.status(400).json({ error: 'ID de cliente inválido' });
@@ -169,62 +169,60 @@ router.post('/cliente/:id/generar-factura', verificarToken, verificarAdmin, asyn
   try {
     const cliente = await prisma.cliente.findUnique({
       where: { id: clienteId },
-      include: { 
-        servicios: { 
+      include: {
+        servicios: {
           where: { estado: "ACTIVO" },
-          include: { paquete: true } 
-        } 
+          include: { paquete: true }
+        }
       }
     });
 
     if (!cliente) return res.status(404).json({ error: 'Cliente no encontrado' });
     if (cliente.servicios.length === 0) return res.status(400).json({ error: 'El cliente no tiene servicios activos' });
 
-    // 🧠 LÓGICA DE SUMA GLOBAL
-    let totalACobrar = 0;
-    cliente.servicios.forEach(servicio => {
-      totalACobrar += servicio.paquete.precio;
-    });
-
-    // 🧠 LÓGICA DE DESCUENTO POR SALDO A FAVOR
-    let montoFinalFactura = totalACobrar;
-    let saldoRestanteCliente = cliente.saldo || 0;
-    let facturaPagada = false;
-
-    if (saldoRestanteCliente > 0) {
-      if (saldoRestanteCliente >= totalACobrar) {
-        saldoRestanteCliente -= totalACobrar;
-        montoFinalFactura = 0; 
-        facturaPagada = true;  
-      } else {
-        montoFinalFactura = totalACobrar - saldoRestanteCliente;
-        saldoRestanteCliente = 0; 
-      }
-    }
-
+    // 🆕 GENERAR UNA FACTURA POR CADA SERVICIO
+    const facturasCreadas = [];
     const fechaVencimiento = new Date();
     fechaVencimiento.setDate(fechaVencimiento.getDate() + 30);
 
-    const [nuevaFactura] = await prisma.$transaction([
-      prisma.factura.create({
-        data: {
-          monto: montoFinalFactura,
-          vencimiento: fechaVencimiento,
-          pagada: facturaPagada,
-          clienteId: cliente.id // ⚠️ Se asigna al cliente global
+    for (const servicio of cliente.servicios) {
+      // Verificar si ya existe factura sin pagar este mes
+      const facturaExistente = await prisma.factura.findFirst({
+        where: {
+          servicioId: servicio.id,
+          pagada: false,
+          createdAt: {
+            gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+          }
         }
-      }),
-      prisma.cliente.update({
-        where: { id: clienteId },
-        data: { saldo: saldoRestanteCliente }
-      })
-    ]);
+      });
 
-    console.log(`✅ Factura global generada por $${montoFinalFactura}. Saldo restante: $${saldoRestanteCliente}`);
-    res.status(200).json({ msg: 'Factura generada exitosamente', factura: nuevaFactura });
+      if (facturaExistente) {
+        console.log(`⏭️  Factura ya existe para servicio ${servicio.id}`);
+        continue;
+      }
+
+      const nuevaFactura = await prisma.factura.create({
+        data: {
+          monto: servicio.paquete.precio,
+          vencimiento: fechaVencimiento,
+          pagada: false,
+          servicioId: servicio.id, // 🆕 VINCULAR A SERVICIO ESPECÍFICO
+          clienteId: cliente.id
+        }
+      });
+
+      facturasCreadas.push(nuevaFactura);
+    }
+
+    console.log(`✅ Se generaron ${facturasCreadas.length} facturas (una por servicio)`);
+    res.status(200).json({
+      msg: `Facturas generadas exitosamente (${facturasCreadas.length} facturas)`,
+      facturas: facturasCreadas
+    });
 
   } catch (error) {
-    console.error('❌ Error al generar factura global:', error);
+    console.error('❌ Error al generar facturas:', error);
     res.status(500).json({ error: 'Error interno del servidor' });
   }
 });
@@ -276,9 +274,8 @@ router.post('/servicio/:id/generar-factura', verificarToken, verificarAdmin, asy
           monto: montoFinalFactura,
           vencimiento: fechaVencimiento,
           pagada: facturaPagada,
-          clienteId: servicio.cliente.id, // Se sigue asignando al cliente para su historial
-          // 💡 NOTA: Si en tu modelo 'Factura' tienes un campo 'servicioId', puedes agregarlo aquí:
-          // servicioId: servicio.id 
+          servicioId: servicio.id, // 🆕 NUEVO: Vincular a servicio específico
+          clienteId: servicio.cliente.id
         }
       }),
       prisma.cliente.update({
