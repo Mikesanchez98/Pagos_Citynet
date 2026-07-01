@@ -21,13 +21,12 @@ const prisma = new PrismaClient();
 router.get('/clientes', verificarToken, verificarAdmin, async (req, res) => {
   try {
     const clientes = await prisma.cliente.findMany({
-      include: { 
-        usuario: true, 
-        // ⚠️ ACTUALIZADO: Facturas cuelgan directamente del cliente
+      orderBy: { numCliente: 'asc' },
+      include: {
+        usuario:  true,
         facturas: { where: { pagada: false } },
         servicios: {
-          // ⚠️ ACTUALIZADO: Traemos el paquete de cada servicio para ver de qué es
-          include: { paquete: true }
+          include: { paquete: true, torre: true }
         }
       }
     });
@@ -139,19 +138,27 @@ router.patch('/servicio/:id/estatus', verificarToken, verificarAdmin, async (req
       data: { estado: nuevoEstado }
     });
 
-    // Llamar a MikroTik solo si el servicio tiene usuario vinculado
-    if (servicio.mikrotikUser) {
-      const mikrotikService = require('../services/mikrotik');
-      try {
+    // Llamar a MikroTik: clientes PPPoE por mikrotikUser, clientes DHCP/MAC por IP
+    const mikrotikService = require('../services/mikrotik');
+    try {
+      if (servicio.mikrotikUser) {
         if (nuevoEstado === 'SUSPENDIDO') {
           await mikrotikService.suspenderUsuario(servicio.mikrotikUser);
         } else {
           await mikrotikService.reactivarUsuario(servicio.mikrotikUser);
         }
-      } catch (mikrotikErr) {
-        console.error(`[MikroTik] Error al ${nuevoEstado} "${servicio.mikrotikUser}":`, mikrotikErr.message);
-        // No bloqueante: el estado en DB ya se actualizó
+      } else if (servicio.direccionIp) {
+        if (nuevoEstado === 'SUSPENDIDO') {
+          await mikrotikService.suspenderPorIp(servicio.direccionIp);
+        } else {
+          await mikrotikService.reactivarPorIp(servicio.direccionIp);
+        }
+      } else {
+        console.warn(`[MikroTik] Servicio ${servicio.id} sin mikrotikUser ni direccionIp — no se pudo aplicar el corte en el router`);
       }
+    } catch (mikrotikErr) {
+      console.error(`[MikroTik] Error al ${nuevoEstado} servicio ${servicio.id}:`, mikrotikErr.message);
+      // No bloqueante: el estado en DB ya se actualizó
     }
 
     res.json(actualizado);
@@ -555,13 +562,15 @@ router.get('/torres', verificarToken, async (req, res) => {
 
 // CREAR UNA NUEVA TORRE
 router.post('/torres', verificarToken, verificarAdmin, async (req, res) => {
-  const { nombre, latitud, longitud } = req.body;
+  const { nombre, descripcion, ipPrincipal, latitud, longitud } = req.body;
   try {
     const nuevaTorre = await prisma.torre.create({
       data: {
         nombre,
-        latitud: parseFloat(latitud),
-        longitud: parseFloat(longitud)
+        descripcion: descripcion || null,
+        ipPrincipal: ipPrincipal || null,
+        latitud:  latitud  ? parseFloat(latitud)  : null,
+        longitud: longitud ? parseFloat(longitud) : null,
       }
     });
     res.json({ mensaje: "Torre creada exitosamente", torre: nuevaTorre });
@@ -573,19 +582,131 @@ router.post('/torres', verificarToken, verificarAdmin, async (req, res) => {
 
 router.put('/torres/:id', verificarToken, verificarAdmin, async (req, res) => {
   const { id } = req.params;
-  const { nombre, latitud, longitud } = req.body;
+  const { nombre, descripcion, ipPrincipal, latitud, longitud } = req.body;
   try {
     const torreActualizada = await prisma.torre.update({
       where: { id: parseInt(id) },
       data: {
         nombre,
-        latitud: latitud ? parseFloat(latitud) : null,
+        descripcion: descripcion ?? null,
+        ipPrincipal: ipPrincipal || null,
+        latitud:  latitud  ? parseFloat(latitud)  : null,
         longitud: longitud ? parseFloat(longitud) : null,
       },
     });
     res.json(torreActualizada);
   } catch (error) {
     res.status(500).json({ error: "Error al actualizar torre" });
+  }
+});
+
+// PUT /api/admin/torres/sync-mikrotik
+// Cruza las interfaces descubiertas del MikroTik con Torres existentes por nombre y actualiza ipPrincipal
+router.put('/torres/sync-mikrotik', verificarToken, verificarAdmin, async (req, res) => {
+  const mikrotikSvc = require('../services/mikrotik');
+  try {
+    // Secuencial: RouterOS API no soporta writes concurrentes en la misma conexión
+    const interfaces = await mikrotikSvc.obtenerInterfaces();
+    const ips        = await mikrotikSvc.obtenerIPAddresses();
+
+    const ipMap = {};
+    ips.forEach(ip => { ipMap[ip.interface] = ip; });
+
+    const torres = await prisma.torre.findMany();
+    const resultados = { actualizadas: [], sinCoincidencia: [] };
+
+    for (const iface of interfaces) {
+      const ipInfo = ipMap[iface.name];
+      if (!ipInfo?.address) continue;
+
+      // Extraer zona del nombre de la interface: "ether5-Primaveras" → "Primaveras"
+      const zonaMatch = iface.name.match(/[-_](.+)$/);
+      const zona = zonaMatch ? zonaMatch[1] : iface.name;
+
+      const torre = torres.find(t =>
+        t.nombre.toLowerCase().includes(zona.toLowerCase()) ||
+        zona.toLowerCase().includes(t.nombre.toLowerCase())
+      );
+
+      if (!torre) {
+        resultados.sinCoincidencia.push({ interface: iface.name, zona });
+        continue;
+      }
+
+      const ipSolo = ipInfo.address.split('/')[0]; // "20.5.0.30/27" → "20.5.0.30"
+      await prisma.torre.update({
+        where: { id: torre.id },
+        data:  { ipPrincipal: ipSolo }
+      });
+      resultados.actualizadas.push({ torre: torre.nombre, ip: ipSolo, interface: iface.name });
+    }
+
+    res.json(resultados);
+  } catch (error) {
+    console.error('❌ Error sync-mikrotik:', error);
+    res.status(500).json({ error: 'Error al sincronizar IPs', detalle: error.message });
+  }
+});
+
+// ==========================================
+// RUTAS DE ANTENAS (CRUD manual)
+// ==========================================
+
+// POST /api/admin/antenas — crear antena manual
+router.post('/antenas', verificarToken, verificarAdmin, async (req, res) => {
+  const { torreId, nombre, descripcion, ipGateway, subred, interfaceName } = req.body;
+  if (!torreId || !nombre) return res.status(400).json({ error: 'torreId y nombre son requeridos' });
+  try {
+    const antena = await prisma.antena.create({
+      data: {
+        torreId:       parseInt(torreId),
+        nombre:        nombre.trim(),
+        descripcion:   descripcion   || null,
+        ipGateway:     ipGateway     || null,
+        subred:        subred        || null,
+        interfaceName: interfaceName || null,
+        activa:        true,
+      }
+    });
+    res.json(antena);
+  } catch (error) {
+    if (error.code === 'P2002') return res.status(409).json({ error: 'Ya existe una antena con ese nombre' });
+    console.error('❌ Error al crear antena:', error);
+    res.status(500).json({ error: 'Error al crear antena', detalle: error.message });
+  }
+});
+
+// PUT /api/admin/antenas/:id — editar antena
+router.put('/antenas/:id', verificarToken, verificarAdmin, async (req, res) => {
+  const { nombre, descripcion, ipGateway, subred, interfaceName, activa } = req.body;
+  try {
+    const antena = await prisma.antena.update({
+      where: { id: parseInt(req.params.id) },
+      data: {
+        ...(nombre        !== undefined && { nombre: nombre.trim() }),
+        descripcion:   descripcion   ?? null,
+        ipGateway:     ipGateway     || null,
+        subred:        subred        || null,
+        interfaceName: interfaceName || null,
+        ...(activa !== undefined && { activa: Boolean(activa) }),
+      }
+    });
+    res.json(antena);
+  } catch (error) {
+    if (error.code === 'P2002') return res.status(409).json({ error: 'Ya existe una antena con ese nombre' });
+    console.error('❌ Error al editar antena:', error);
+    res.status(500).json({ error: 'Error al editar antena', detalle: error.message });
+  }
+});
+
+// DELETE /api/admin/antenas/:id — eliminar antena
+router.delete('/antenas/:id', verificarToken, verificarAdmin, async (req, res) => {
+  try {
+    await prisma.antena.delete({ where: { id: parseInt(req.params.id) } });
+    res.json({ ok: true });
+  } catch (error) {
+    console.error('❌ Error al eliminar antena:', error);
+    res.status(500).json({ error: 'Error al eliminar antena', detalle: error.message });
   }
 });
 
@@ -1541,6 +1662,53 @@ router.get('/mikrotik/sesiones-activas', verificarToken, verificarAdmin, async (
   } catch (error) {
     console.error('[MikroTik sesiones]:', error.message);
     res.status(500).json({ error: 'Error al obtener sesiones activas', detalle: error.message });
+  }
+});
+
+// GET /api/admin/mikrotik/leases-dhcp
+// Retorna leases DHCP activos con datos de vinculación a Servicios por MAC
+router.get('/mikrotik/leases-dhcp', verificarToken, verificarAdmin, async (req, res) => {
+  const mikrotikSvc = require('../services/mikrotik');
+  try {
+    const leases = await mikrotikSvc.obtenerLeasesDHCP();
+
+    const enriquecidos = await Promise.all(leases.map(async (l) => {
+      // Buscar servicio vinculado por MAC
+      const servicio = await prisma.servicio.findFirst({
+        where: { macAddress: l.mac },
+        include: { cliente: true, paquete: true, antena: true, torre: true }
+      });
+
+      // Buscar en staging si ya fue importado
+      const staging = await prisma.clienteMikrotik.findUnique({
+        where: { macAddress: l.mac },
+        include: { cliente: true }
+      });
+
+      return {
+        mac:          l.mac,
+        ip:           l.ip,
+        hostname:     l.hostname,
+        servidor:     l.servidor,
+        estado:       l.estado,
+        comentario:   l.comentario,
+        deshabilitado: l.deshabilitado,
+        // Vinculación con Servicio
+        vinculado:    !!servicio,
+        cliente:      servicio?.cliente?.nombre    || staging?.cliente?.nombre  || null,
+        numCliente:   servicio?.cliente?.numCliente || staging?.cliente?.numCliente || null,
+        plan:         servicio?.paquete?.nombre    || null,
+        antena:       servicio?.antena?.nombre     || null,
+        torre:        servicio?.torre?.nombre      || null,
+        servicioId:   servicio?.id                 || null,
+        importado:    !!staging
+      };
+    }));
+
+    res.json(enriquecidos);
+  } catch (error) {
+    console.error('[MikroTik leases-dhcp]:', error.message);
+    res.status(500).json({ error: 'Error al obtener leases DHCP', detalle: error.message });
   }
 });
 

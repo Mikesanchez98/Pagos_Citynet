@@ -43,15 +43,18 @@ class CorteAutomaticoService {
 
       for (const servicio of servicios) {
         try {
-          if (servicio.mikrotikUser && process.env.MIKROTIK_PASSWORD !== 'mock') {
-            try {
-              await mikrotikService.deshabilitarUsuario(servicio.mikrotikUser);
+          try {
+            if (servicio.mikrotikUser) {
+              await mikrotikService.suspenderUsuario(servicio.mikrotikUser);
               console.log(`✅ Usuario ${servicio.mikrotikUser} deshabilitado en MikroTik`);
-            } catch (err) {
-              console.warn(`⚠️  No se pudo deshabilitar en MikroTik: ${err.message}`);
+            } else if (servicio.direccionIp) {
+              await mikrotikService.suspenderPorIp(servicio.direccionIp);
+              console.log(`✅ IP ${servicio.direccionIp} bloqueada en MikroTik`);
+            } else {
+              console.warn(`⚠️  Servicio ${servicio.id} sin mikrotikUser ni direccionIp — no se pudo cortar en el router`);
             }
-          } else if (servicio.mikrotikUser) {
-            console.log(`🔄 [MOCK] Usuario ${servicio.mikrotikUser} sería deshabilitado`);
+          } catch (err) {
+            console.warn(`⚠️  No se pudo deshabilitar en MikroTik: ${err.message}`);
           }
 
           await prisma.servicio.update({

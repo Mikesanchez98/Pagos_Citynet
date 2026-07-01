@@ -11,7 +11,8 @@ const validar = (schema) => (req, res, next) => {
   const resultado = schema.safeParse(req.body);
 
   if (!resultado.success) {
-    const errores = resultado.error.errors.map(e => ({
+    const issues = resultado.error?.issues ?? resultado.error?.errors ?? [];
+    const errores = issues.map(e => ({
       campo: e.path.join('.'),
       mensaje: e.message
     }));
@@ -34,7 +35,7 @@ const schemas = {
 
   // POST /api/admin/registrar-cliente
   registrarCliente: z.object({
-    email:     z.string().email('Email inválido'),
+    email:     z.string().min(1, 'El usuario es requerido'),
     password:  z.string().min(8, 'La contraseña debe tener al menos 8 caracteres'),
     nombre:    z.string().min(2, 'El nombre es requerido').max(100),
     numCliente:z.string().min(1, 'El número de cliente es requerido'),

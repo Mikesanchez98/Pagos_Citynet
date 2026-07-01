@@ -10,15 +10,18 @@ class MikrotikService {
   constructor() {
     this.conn = null;
     this.isConnected = false;
-    // Modo MOCK si la contraseña no está configurada o tiene el marcador de ejemplo
     this.isMock =
       !process.env.MIKROTIK_PASSWORD ||
       process.env.MIKROTIK_PASSWORD.startsWith('CitynetADM') === false &&
       process.env.MIKROTIK_PASSWORD !== 'mock'
-        ? false // Contraseña personalizada → conexión real
+        ? false
         : !process.env.MIKROTIK_HOST || process.env.MIKROTIK_HOST === '192.168.1.1'
-          ? false  // Host configurado → intentar real
+          ? false
           : true;
+
+    // Caché en memoria para leases DHCP — se sirve mientras se reconecta
+    this._leasesCache  = null;
+    this._leasesCacheTs = 0;
   }
 
   // ── Conexión ─────────────────────────────────────────────
@@ -36,10 +39,16 @@ class MikrotikService {
         user:     process.env.MIKROTIK_USER     || 'admin',
         password: process.env.MIKROTIK_PASSWORD || '',
         port:     parseInt(process.env.MIKROTIK_PORT) || 8728,
-        timeout:  15
+        timeout:  10  // segundos
       });
 
-      await this.conn.connect();
+      // Timeout externo de 12 segundos para evitar que TCP cuelgue indefinidamente
+      await Promise.race([
+        this.conn.connect(),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Timeout de conexión a MikroTik (12s)')), 12000)
+        )
+      ]);
       this.isConnected = true;
       console.log(`✅ Conectado a MikroTik (${process.env.MIKROTIK_HOST}:${process.env.MIKROTIK_PORT || 8728})`);
       return true;
@@ -62,6 +71,16 @@ class MikrotikService {
     return true;
   }
 
+  // Wrapper con timeout para evitar que writes en conexiones muertas cuelguen
+  async _write(command, timeoutMs = 10000) {
+    return Promise.race([
+      this.conn.write(command),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error(`Timeout de escritura MikroTik (${timeoutMs / 1000}s)`)), timeoutMs)
+      )
+    ]);
+  }
+
   // ── Consultas ────────────────────────────────────────────
 
   async obtenerUsuariosPPPoE() {
@@ -73,7 +92,7 @@ class MikrotikService {
     }
 
     await this.ensureConnected();
-    const secrets = await this.conn.write('/ppp/secret/print');
+    const secrets = await this._write('/ppp/secret/print');
     return secrets.map(s => ({
       id:       s['.id'],
       name:     s.name,
@@ -85,6 +104,63 @@ class MikrotikService {
     }));
   }
 
+  async obtenerLeasesDHCP() {
+    if (this.isMock) {
+      // Si hay caché real previa, devolverla aunque estemos en MOCK temporal
+      if (this._leasesCache) return this._leasesCache;
+      return [
+        { mac: 'AA:BB:CC:11:22:33', ip: '192.168.1.100', hostname: 'cliente-001', servidor: 'dhcp1', estado: 'bound',   comentario: 'Juan Perez',  deshabilitado: false },
+        { mac: 'AA:BB:CC:44:55:66', ip: '192.168.1.101', hostname: 'cliente-002', servidor: 'dhcp1', estado: 'bound',   comentario: 'Maria Garcia', deshabilitado: false },
+        { mac: 'AA:BB:CC:77:88:99', ip: '192.168.1.102', hostname: '',            servidor: 'dhcp2', estado: 'waiting', comentario: '',             deshabilitado: true  },
+      ];
+    }
+
+    const parsearLeases = (raw) => raw
+      .filter(l => l['mac-address'])
+      .map(l => ({
+        mac:           l['mac-address']    || '',
+        ip:            l['active-address'] || l.address || '',
+        hostname:      l['host-name']      || '',
+        servidor:      l['active-server']  || l.server  || '',
+        estado:        l.status            || 'waiting',
+        comentario:    l.comment           || '',
+        deshabilitado: l.disabled === 'true'
+      }));
+
+    // Primer intento
+    try {
+      await this.ensureConnected();
+      const raw    = await this._write('/ip/dhcp-server/lease/print');
+      const result = parsearLeases(raw);
+      this._leasesCache   = result;
+      this._leasesCacheTs = Date.now();
+      return result;
+    } catch {
+      // Conexión caída — reconectar y reintentar una vez
+      this.isConnected = false;
+      this.conn = null;
+    }
+
+    console.warn('⚠️ Conexión caída — reconectando y reintentando...');
+    try {
+      const ok = await this.connect();
+      if (!ok) throw new Error('Reconexión fallida');
+      const raw    = await this._write('/ip/dhcp-server/lease/print');
+      const result = parsearLeases(raw);
+      this._leasesCache   = result;
+      this._leasesCacheTs = Date.now();
+      return result;
+    } catch (retryError) {
+      // Devolver caché si tiene menos de 10 minutos
+      const cacheAge = Date.now() - this._leasesCacheTs;
+      if (this._leasesCache && cacheAge < 600000) {
+        console.warn(`⚠️ Reintento fallido — sirviendo caché (${Math.round(cacheAge / 1000)}s de antigüedad)`);
+        return this._leasesCache;
+      }
+      throw retryError;
+    }
+  }
+
   async obtenerSesionesActivas() {
     if (this.isMock) {
       return [
@@ -93,7 +169,7 @@ class MikrotikService {
     }
 
     await this.ensureConnected();
-    const sessions = await this.conn.write('/ppp/active/print');
+    const sessions = await this._write('/ppp/active/print');
     return sessions.map(s => ({
       usuario: s.name,
       ip:      s.address       || null,
@@ -115,11 +191,11 @@ class MikrotikService {
       }
 
       await this.ensureConnected();
-      const todos = await this.conn.write('/ppp/secret/print');
+      const todos = await this._write('/ppp/secret/print');
       const user  = todos.find(u => u.name === mikrotikUser);
       if (!user) throw new Error(`PPPoE secret "${mikrotikUser}" no encontrado en MikroTik`);
 
-      await this.conn.write('/ppp/secret/set', [`=.id=${user['.id']}`, '=disabled=yes']);
+      await this._write('/ppp/secret/set', [`=.id=${user['.id']}`, '=disabled=yes']);
       console.log(`✅ Suspendido en MikroTik: ${mikrotikUser}`);
       await this.registrarLog('suspend', mikrotikUser, 'success');
       return { success: true };
@@ -140,17 +216,103 @@ class MikrotikService {
       }
 
       await this.ensureConnected();
-      const todos = await this.conn.write('/ppp/secret/print');
+      const todos = await this._write('/ppp/secret/print');
       const user  = todos.find(u => u.name === mikrotikUser);
       if (!user) throw new Error(`PPPoE secret "${mikrotikUser}" no encontrado en MikroTik`);
 
-      await this.conn.write('/ppp/secret/set', [`=.id=${user['.id']}`, '=disabled=no']);
+      await this._write('/ppp/secret/set', [`=.id=${user['.id']}`, '=disabled=no']);
       console.log(`✅ Reactivado en MikroTik: ${mikrotikUser}`);
       await this.registrarLog('reactivate', mikrotikUser, 'success');
       return { success: true };
     } catch (error) {
       console.error(`❌ Error reactivando ${mikrotikUser}:`, error.message);
       await this.registrarLog('reactivate', mikrotikUser, 'failed', error);
+      throw error;
+    }
+  }
+
+  // ── Suspensión por IP (clientes sin PPPoE — DHCP/MAC) ───
+  // Usa una address-list de firewall ('clientes-suspendidos' por defecto) +
+  // una regla forward que la dropea. La regla se crea una sola vez si falta.
+
+  get listaSuspendidos() {
+    return process.env.MIKROTIK_ADDRESS_LIST || 'clientes-suspendidos';
+  }
+
+  async asegurarReglaFirewall() {
+    if (this.isMock) return;
+    await this.ensureConnected();
+    const reglas = await this._write('/ip/firewall/filter/print');
+    const yaExiste = reglas.some(r =>
+      r.chain === 'forward' &&
+      r.action === 'drop' &&
+      r['src-address-list'] === this.listaSuspendidos
+    );
+    if (!yaExiste) {
+      await this._write('/ip/firewall/filter/add', [
+        '=chain=forward',
+        `=src-address-list=${this.listaSuspendidos}`,
+        '=action=drop',
+        '=comment=Corte automático de clientes suspendidos (Pagos Citynet)'
+      ]);
+      console.log(`✅ Regla de firewall creada para lista "${this.listaSuspendidos}"`);
+    }
+  }
+
+  async suspenderPorIp(ip) {
+    await this.registrarLog('suspend-ip', ip, 'attempt');
+    try {
+      if (this.isMock) {
+        console.log(`⚠️  [MOCK] Suspendido por IP: ${ip}`);
+        await this.registrarLog('suspend-ip', ip, 'success');
+        return { success: true, mock: true };
+      }
+
+      await this.ensureConnected();
+      await this.asegurarReglaFirewall();
+
+      const existentes   = await this._write('/ip/firewall/address-list/print');
+      const yaSuspendido = existentes.find(e => e.list === this.listaSuspendidos && e.address === ip);
+      if (!yaSuspendido) {
+        await this._write('/ip/firewall/address-list/add', [
+          `=list=${this.listaSuspendidos}`,
+          `=address=${ip}`,
+          '=comment=Suspendido por sistema de pagos'
+        ]);
+      }
+
+      console.log(`✅ Suspendido en MikroTik (IP): ${ip}`);
+      await this.registrarLog('suspend-ip', ip, 'success');
+      return { success: true };
+    } catch (error) {
+      console.error(`❌ Error suspendiendo IP ${ip}:`, error.message);
+      await this.registrarLog('suspend-ip', ip, 'failed', error);
+      throw error;
+    }
+  }
+
+  async reactivarPorIp(ip) {
+    await this.registrarLog('reactivate-ip', ip, 'attempt');
+    try {
+      if (this.isMock) {
+        console.log(`⚠️  [MOCK] Reactivado por IP: ${ip}`);
+        await this.registrarLog('reactivate-ip', ip, 'success');
+        return { success: true, mock: true };
+      }
+
+      await this.ensureConnected();
+      const existentes = await this._write('/ip/firewall/address-list/print');
+      const entrada     = existentes.find(e => e.list === this.listaSuspendidos && e.address === ip);
+      if (entrada) {
+        await this._write('/ip/firewall/address-list/remove', [`=.id=${entrada['.id']}`]);
+      }
+
+      console.log(`✅ Reactivado en MikroTik (IP): ${ip}`);
+      await this.registrarLog('reactivate-ip', ip, 'success');
+      return { success: true };
+    } catch (error) {
+      console.error(`❌ Error reactivando IP ${ip}:`, error.message);
+      await this.registrarLog('reactivate-ip', ip, 'failed', error);
       throw error;
     }
   }
@@ -163,7 +325,7 @@ class MikrotikService {
       }
 
       await this.ensureConnected();
-      await this.conn.write('/ppp/secret/add', [
+      await this._write('/ppp/secret/add', [
         `=name=${mikrotikUser}`,
         `=password=${password}`,
         `=profile=${profile}`,
@@ -191,7 +353,7 @@ class MikrotikService {
     }
 
     await this.ensureConnected();
-    const all = await this.conn.write('/interface/print');
+    const all = await this._write('/interface/print');
     // Filtrar solo tipos útiles para clientes (vlan, bridge, pppoe-server, ether)
     const tiposInteres = ['vlan', 'bridge', 'pppoe-server', 'ether', 'bonding'];
     return all
@@ -215,7 +377,7 @@ class MikrotikService {
     }
 
     await this.ensureConnected();
-    const ips = await this.conn.write('/ip/address/print');
+    const ips = await this._write('/ip/address/print');
     return ips.map(ip => ({
       interface: ip.interface,
       address:   ip.address,          // e.g. "10.105.110.1/24"
@@ -233,7 +395,7 @@ class MikrotikService {
     }
 
     await this.ensureConnected();
-    const sessions = await this.conn.write('/ppp/active/print');
+    const sessions = await this._write('/ppp/active/print');
     return sessions.map(s => ({
       usuario:  s.name,
       ip:       s.address       || null,
@@ -249,7 +411,7 @@ class MikrotikService {
     if (this.isMock) return { ok: true, mock: true, mensaje: 'Modo MOCK activo' };
     try {
       await this.ensureConnected();
-      const [info] = await this.conn.write('/system/identity/print');
+      const [info] = await this._write('/system/identity/print');
       return { ok: true, mock: false, identity: info?.name || 'MikroTik' };
     } catch (error) {
       return { ok: false, mock: false, error: error.message };

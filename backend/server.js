@@ -25,12 +25,8 @@ const mikrotikService = require('./services/mikrotik');
 
 // Conectar a MikroTik al iniciar
 (async () => {
-  try {
-    await mikrotikService.connect();
-    console.log('🟢 MikroTik conectado');
-  } catch (error) {
-    console.error('🔴 Error conectando a MikroTik:', error.message);
-  }
+  const ok = await mikrotikService.connect();
+  if (!ok) console.warn('⚠️  Backend iniciado en modo MOCK — MikroTik no disponible');
 })();
 
 // Desconectar al apagar
@@ -88,6 +84,10 @@ app.use('/api/monitoreo', monitoreoRoutes);
 // 🆕 RUTAS DE FACTURACIÓN
 const facturacionRoutes = require('./routes/facturacion');
 app.use('/api/facturacion', facturacionRoutes);
+
+// 🆕 RUTAS DE IMPORTACIÓN MIKROTIK
+const importarRoutes = require('./routes/importar');
+app.use('/api/importar', importarRoutes);
 //if (process.env.VERCEL !== '1') {
 //  iniciarCronFacturacion(); 
 //}

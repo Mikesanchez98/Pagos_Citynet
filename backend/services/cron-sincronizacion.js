@@ -3,7 +3,7 @@ const sincronizacion = require('./sincronizacion-mikrotik');
 const corteAutomatico = require('./corte-automatico');
 
 function iniciarCronSincronizacion() {
-  const jobSincronizacion = cron.schedule('*/5 * * * *', async () => {
+  const jobSincronizacion = cron.schedule('0 * * * *', async () => {
     try {
       console.log('📡 Ejecutando sincronización periódica...');
       await sincronizacion.sincronizarServicios();
@@ -22,7 +22,7 @@ function iniciarCronSincronizacion() {
     console.log('🚨 ===== FIN DE CORTE AUTOMÁTICO DIARIO =====\n');
   });
 
-  console.log('✅ Cron de sincronización iniciado (cada 5 minutos)');
+  console.log('✅ Cron de sincronización iniciado (cada hora)');
   console.log('✅ Cron de corte automático iniciado (00:00 diarios)');
 
   return { jobSincronizacion, jobCorte };

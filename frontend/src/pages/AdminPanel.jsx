@@ -18,8 +18,11 @@ const AdminPanel = () => {
   const [geocodingKey, setGeocodingKey] = useState(0);
   
   // ESTADOS PARA BÚSQUEDA Y FILTROS
-  const [busqueda, setBusqueda] = useState('');
-  const [filtro, setFiltro] = useState('TODOS'); 
+  const [busqueda,       setBusqueda]       = useState('');
+  const [filtroEstado,   setFiltroEstado]   = useState('TODOS');
+  const [filtroPaquete,  setFiltroPaquete]  = useState('');
+  const [filtroTorre,    setFiltroTorre]    = useState('');
+  const [filtroEspecial, setFiltroEspecial] = useState(''); // 'MULTI_SERVICIO' | 'SIN_MAC' | 'TEMPORAL' | 'SIN_EMAIL' | 'CON_SALDO'
 
   // FORMULARIO ACTUALIZADO (Con teléfono)
   const [form, setForm] = useState({
@@ -27,15 +30,16 @@ const AdminPanel = () => {
     password: '',
     nombre: '',
     numCliente: 'CT-',
+    paqueteId: '',
     plan: '',
-    precio:0,
+    precio: 0,
     ip: '',
     diaCobro: 1,
     direccion: '',
     latitud: '',
     longitud: '',
     torreId: '',
-    telefono: '' 
+    telefono: ''
   });
 
   // ESTADOS PARA EL MODAL DE PAGO
@@ -259,10 +263,10 @@ const AdminPanel = () => {
 
   const cancelarEdicion = () => {
     setEditandoId(null);
-    setForm({ 
-      email: '', password: '', nombre: '', numCliente: 'CT-', plan: 'Fibra 20 Mbps', 
-      precio: 550, ip: '', diaCobro: 1, direccion: '', latitud: '', longitud: '', torreId: '',
-      telefono: '' 
+    setForm({
+      email: '', password: '', nombre: '', numCliente: 'CT-', paqueteId: '',
+      plan: '', precio: 0, ip: '', diaCobro: 1, direccion: '', latitud: '', longitud: '',
+      torreId: '', telefono: ''
     });
   };
 
@@ -380,20 +384,52 @@ const AdminPanel = () => {
   };
 
   // LÓGICA DE FILTRADO Y BÚSQUEDA
-  const clientesFiltrados = clientes?.filter(cliente => {
+  // Derivar listas únicas para los dropdowns
+  const paquetesUnicos = [...new Map(
+    clientes.flatMap(c => c.servicios || [])
+      .filter(s => s.paquete)
+      .map(s => [s.paquete.id, s.paquete])
+  ).values()].sort((a, b) => a.nombre.localeCompare(b.nombre));
+
+  const torresUnicas = [...new Map(
+    clientes.flatMap(c => c.servicios || [])
+      .filter(s => s.torre)
+      .map(s => [s.torre.id, s.torre])
+  ).values()].sort((a, b) => a.nombre.localeCompare(b.nombre));
+
+  const clientesFiltrados = clientes?.filter(c => {
     const texto = busqueda.toLowerCase();
-    const coincideTexto =
-      cliente.nombre?.toLowerCase().includes(texto) ||
-      cliente.numCliente?.toLowerCase().includes(texto);
 
-    if (!coincideTexto) return false;
+    // Búsqueda por texto (nombre, número, email, teléfono)
+    if (texto && !(
+      c.nombre?.toLowerCase().includes(texto)    ||
+      c.numCliente?.toLowerCase().includes(texto) ||
+      c.email?.toLowerCase().includes(texto)      ||
+      c.telefono?.includes(texto)
+    )) return false;
 
-    const estadoServicio = cliente.servicios?.[0]?.estado || 'SIN SERVICIO';
-    const esDeudor = (cliente.facturas || []).some(f => !f.pagada);
+    const servicios     = c.servicios || [];
+    const estadoPrimero = servicios[0]?.estado || 'SIN SERVICIO';
+    const esDeudor      = (c.facturas || []).length > 0;
 
-    if (filtro === 'DEUDORES') return esDeudor;
-    if (filtro === 'ACTIVOS') return estadoServicio === 'ACTIVO';
-    if (filtro === 'SUSPENDIDOS') return estadoServicio === 'SUSPENDIDO';
+    // Filtro por estado (AND con el resto)
+    if (filtroEstado === 'ACTIVOS'     && estadoPrimero !== 'ACTIVO')     return false;
+    if (filtroEstado === 'SUSPENDIDOS' && estadoPrimero !== 'SUSPENDIDO') return false;
+    if (filtroEstado === 'DEUDORES'    && !esDeudor)                       return false;
+
+    // Filtro por paquete
+    if (filtroPaquete && !servicios.some(s => s.paquete?.id === filtroPaquete)) return false;
+
+    // Filtro por torre
+    if (filtroTorre && !servicios.some(s => s.torre?.id === parseInt(filtroTorre))) return false;
+
+    // Filtros especiales (cada uno acumula sobre los anteriores)
+    if (filtroEspecial === 'MULTI_SERVICIO' && servicios.length <= 1)                         return false;
+    if (filtroEspecial === 'SIN_MAC'        && !servicios.some(s => !s.macAddress))           return false;
+    if (filtroEspecial === 'TEMPORAL'       && !c.numCliente?.startsWith('DHCP-'))            return false;
+    if (filtroEspecial === 'SIN_EMAIL'      && c.email && !c.email.endsWith('@citynet.local')) return false;
+    if (filtroEspecial === 'CON_SALDO'      && !((c.saldo || 0) > 0))                         return false;
+    if (filtroEspecial === 'SIN_SERVICIO'   && servicios.length > 0)                          return false;
 
     return true;
   }) || [];
@@ -599,31 +635,96 @@ const AdminPanel = () => {
           </div>
 
 
-          {/* 🟢 BARRA DE BÚSQUEDA Y FILTROS MOVIDA AQUÍ 🟢 */}
-          <div className="flex flex-col md:flex-row gap-4 justify-between items-center mb-6 z-10 relative">
-            <div className="relative w-full md:w-1/2">
-              <span className="absolute inset-y-0 left-0 flex items-center pl-5 text-slate-400 text-lg">🔍</span>
-              <input
-                type="text"
-                placeholder="Buscar cliente..."
-                className="w-full py-4 pl-14 pr-4 bg-white border border-slate-200 rounded-[2rem] text-sm font-bold text-slate-700 shadow-sm focus:outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100 transition-all"
-                value={busqueda}
-                onChange={(e) => setBusqueda(e.target.value)}
-              />
+          {/* BARRA DE BÚSQUEDA Y FILTROS */}
+          <div className="space-y-3 mb-6">
+
+            {/* Búsqueda + contador */}
+            <div className="flex gap-3 items-center">
+              <div className="relative flex-1">
+                <span className="absolute inset-y-0 left-0 flex items-center pl-5 text-slate-400">🔍</span>
+                <input
+                  type="text"
+                  placeholder="Buscar por nombre, número, email o teléfono..."
+                  className="w-full py-4 pl-14 pr-4 bg-white border border-slate-200 rounded-[2rem] text-sm font-bold text-slate-700 shadow-sm focus:outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100 transition-all"
+                  value={busqueda}
+                  onChange={e => setBusqueda(e.target.value)}
+                />
+              </div>
+              <span className="text-[10px] font-black text-slate-400 whitespace-nowrap">
+                {clientesFiltrados.length} / {clientes.length}
+              </span>
+              {(busqueda || filtroEstado !== 'TODOS' || filtroPaquete || filtroTorre || filtroEspecial) && (
+                <button
+                  onClick={() => { setBusqueda(''); setFiltroEstado('TODOS'); setFiltroPaquete(''); setFiltroTorre(''); setFiltroEspecial(''); }}
+                  className="text-[10px] font-black text-slate-400 hover:text-red-500 whitespace-nowrap transition-all"
+                >
+                  ✕ Limpiar
+                </button>
+              )}
             </div>
 
-            <div className="flex gap-2 w-full md:w-auto overflow-x-auto pb-2 md:pb-0 scrollbar-hide">
-              {['TODOS', 'DEUDORES', 'ACTIVOS', 'SUSPENDIDOS'].map(tipo => (
-                <button
-                  key={tipo}
-                  onClick={() => setFiltro(tipo)}
-                  className={`px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest whitespace-nowrap transition-all ${
-                    filtro === tipo 
-                      ? 'bg-blue-500 text-white shadow-lg shadow-blue-200 border-transparent' 
+            {/* Filtros por estado */}
+            <div className="flex flex-wrap gap-2">
+              {[
+                { key: 'TODOS',      label: 'Todos' },
+                { key: 'ACTIVOS',    label: 'Activos' },
+                { key: 'SUSPENDIDOS',label: 'Suspendidos' },
+                { key: 'DEUDORES',   label: 'Con deuda' },
+              ].map(({ key, label }) => (
+                <button key={key} onClick={() => setFiltroEstado(key)}
+                  className={`px-4 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                    filtroEstado === key
+                      ? 'bg-blue-500 text-white shadow-md'
                       : 'bg-white border border-slate-200 text-slate-500 hover:bg-slate-50'
-                  }`}
-                >
-                  {tipo}
+                  }`}>
+                  {label}
+                </button>
+              ))}
+
+              <div className="w-px bg-slate-200 mx-1" />
+
+              {/* Filtro por paquete */}
+              <select value={filtroPaquete} onChange={e => setFiltroPaquete(e.target.value)}
+                className={`px-4 py-2 rounded-2xl text-[10px] font-black uppercase border transition-all cursor-pointer ${
+                  filtroPaquete ? 'bg-purple-500 text-white border-purple-500' : 'bg-white border-slate-200 text-slate-500'
+                }`}>
+                <option value="">Todos los paquetes</option>
+                {paquetesUnicos.map(p => (
+                  <option key={p.id} value={p.id}>{p.nombre}</option>
+                ))}
+              </select>
+
+              {/* Filtro por torre */}
+              <select value={filtroTorre} onChange={e => setFiltroTorre(e.target.value)}
+                className={`px-4 py-2 rounded-2xl text-[10px] font-black uppercase border transition-all cursor-pointer ${
+                  filtroTorre ? 'bg-green-500 text-white border-green-500' : 'bg-white border-slate-200 text-slate-500'
+                }`}>
+                <option value="">Todas las torres</option>
+                {torresUnicas.map(t => (
+                  <option key={t.id} value={t.id}>{t.nombre}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Filtros especiales */}
+            <div className="flex flex-wrap gap-2">
+              <span className="text-[10px] font-black text-slate-300 uppercase self-center">Especiales:</span>
+              {[
+                { key: 'MULTI_SERVICIO', label: '2+ servicios',    activeClass: 'bg-orange-500 border-orange-500 text-white shadow-md' },
+                { key: 'SIN_MAC',        label: 'Sin MAC',          activeClass: 'bg-red-500 border-red-500 text-white shadow-md'    },
+                { key: 'TEMPORAL',       label: 'ID temporal DHCP', activeClass: 'bg-yellow-500 border-yellow-500 text-white shadow-md' },
+                { key: 'SIN_EMAIL',      label: 'Sin email real',   activeClass: 'bg-slate-500 border-slate-500 text-white shadow-md'  },
+                { key: 'CON_SALDO',      label: 'Con saldo a favor',activeClass: 'bg-emerald-500 border-emerald-500 text-white shadow-md' },
+                { key: 'SIN_SERVICIO',   label: 'Sin servicio',     activeClass: 'bg-rose-500 border-rose-500 text-white shadow-md'   },
+              ].map(({ key, label, activeClass }) => (
+                <button key={key}
+                  onClick={() => setFiltroEspecial(filtroEspecial === key ? '' : key)}
+                  className={`px-4 py-2 rounded-2xl text-[10px] font-black uppercase tracking-wide transition-all border ${
+                    filtroEspecial === key
+                      ? activeClass
+                      : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+                  }`}>
+                  {label}
                 </button>
               ))}
             </div>

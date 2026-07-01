@@ -219,17 +219,33 @@ model CambioAntena {
 
 model ClienteMikrotik {
   id              Int     @id @default(autoincrement())
-  numCliente      String  @unique
-  nombreMikrotik  String
-  profile         String
+
+  // Identificador estable — MAC address del dispositivo
+  macAddress      String  @unique
+
+  // IP actual asignada por DHCP (puede cambiar)
+  ipActual        String?
+
+  // Hostname del dispositivo reportado por DHCP
+  hostname        String?
+
+  // Servidor DHCP que otorgó el lease (identifica antena/segmento)
+  servidorDhcp    String?
+
+  // Comentario del lease en MikroTik (suele tener nombre del cliente)
+  comentario      String?
+
+  // Estado del lease: bound | waiting | expired
+  estadoLease     String  @default("bound")
+
   routerOrigen    String
-  servicio        String
   deshabilitado   Boolean @default(false)
-  
+
+  // Vinculación con cliente registrado en el sistema
   sincronizado    Boolean @default(false)
   clienteId       Int?
   cliente         Cliente? @relation(fields: [clienteId], references: [id], onDelete: SetNull)
-  
+
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 }
